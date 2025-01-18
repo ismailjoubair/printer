@@ -16,36 +16,68 @@ void setup() {
   pinMode(DIR_Y, OUTPUT);
   pinMode(STEP_Z, OUTPUT);
   pinMode(DIR_Z, OUTPUT);
+
+  // Initialisation de la communication série
+  Serial.begin(115200); // Assurez-vous que le baud rate correspond à celui configuré dans UGS
 }
 
 void loop() {
-  // Mouvement de l'axe X dans une direction
-  digitalWrite(DIR_X, HIGH); // Définir la direction
-  for (int i = 0; i < 200; i++) { // 200 pas (1 tour complet pour un moteur 1.8°/pas)
-    digitalWrite(STEP_X, HIGH);
-    delayMicroseconds(800); // Ajuster pour la vitesse
-    digitalWrite(STEP_X, LOW);
-    delayMicroseconds(800);
-  }
-  delay(1000); // Pause de 1 seconde
+  // Vérifiez si des données sont disponibles sur le port série
+  if (Serial.available() > 0) {
+    // Lire la commande envoyée par UGS
+    String command = Serial.readStringUntil('\n');
+    command.trim(); // Retirer les espaces ou caractères inutiles
 
-  // Mouvement de l'axe Y dans l'autre direction
-  digitalWrite(DIR_Y, LOW); // Définir la direction
-  for (int i = 0; i < 200; i++) {
-    digitalWrite(STEP_Y, HIGH);
-    delayMicroseconds(800);
-    digitalWrite(STEP_Y, LOW);
-    delayMicroseconds(800);
+    // Analyse de la commande G-code
+    if (command.startsWith("G00") || command.startsWith("G01")) {
+      // Mouvement linéaire (G00 pour rapide, G01 pour précis)
+      processMoveCommand(command);
+    }
   }
-  delay(1000); // Pause de 1 seconde
+}
 
-  // Mouvement de l'axe Z dans une direction
-  digitalWrite(DIR_Z, HIGH); // Définir la direction
-  for (int i = 0; i < 200; i++) {
-    digitalWrite(STEP_Z, HIGH);
-    delayMicroseconds(800);
-    digitalWrite(STEP_Z, LOW);
-    delayMicroseconds(800);
+// Fonction pour traiter une commande G-code
+void processMoveCommand(String command) {
+  float targetX = 0, targetY = 0, targetZ = 0;
+  int feedrate = 0;
+
+  // Extraire les valeurs des axes et du feedrate
+  if (command.indexOf('X') != -1) targetX = extractValue(command, 'X');
+  if (command.indexOf('Y') != -1) targetY = extractValue(command, 'Y');
+  if (command.indexOf('Z') != -1) targetZ = extractValue(command, 'Z');
+  if (command.indexOf('F') != -1) feedrate = extractValue(command, 'F');
+
+  // Convertir feedrate en délai entre impulsions
+  int delayMicrosecondsPerStep = feedrate > 0 ? (60000 / feedrate) : 800;
+
+  // Effectuer les déplacements des moteurs
+  moveAxis(STEP_X, DIR_X, targetX, delayMicrosecondsPerStep);
+  moveAxis(STEP_Y, DIR_Y, targetY, delayMicrosecondsPerStep);
+  moveAxis(STEP_Z, DIR_Z, targetZ, delayMicrosecondsPerStep);
+}
+
+// Fonction pour extraire une valeur après un caractère spécifique (X, Y, Z, F)
+float extractValue(String command, char key) {
+  int index = command.indexOf(key);
+  if (index == -1) return 0;
+  int spaceIndex = command.indexOf(' ', index);
+  if (spaceIndex == -1) spaceIndex = command.length();
+  return command.substring(index + 1, spaceIndex).toFloat();
+}
+
+// Fonction pour déplacer un axe donné
+void moveAxis(int stepPin, int dirPin, float targetSteps, int delayMicrosecondsPerStep) {
+  if (targetSteps > 0) {
+    digitalWrite(dirPin, HIGH); // Définir la direction
+  } else {
+    digitalWrite(dirPin, LOW);  // Inverser la direction
+    targetSteps = -targetSteps; // Convertir les pas en positif
   }
-  delay(1000); // Pause de 1 seconde
+
+  for (int i = 0; i < targetSteps; i++) {
+    digitalWrite(stepPin, HIGH);
+    delayMicroseconds(delayMicrosecondsPerStep);
+    digitalWrite(stepPin, LOW);
+    delayMicroseconds(delayMicrosecondsPerStep);
+  }
 }
