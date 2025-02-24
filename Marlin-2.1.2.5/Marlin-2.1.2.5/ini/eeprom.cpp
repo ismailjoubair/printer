@@ -19,39 +19,86 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  *
  */
-#ifdef ARDUINO_ARCH_ESP32
+#ifdef __PLAT_LINUX__
 
 #include "../../inc/MarlinConfig.h"
 
 #if ENABLED(EEPROM_SETTINGS)
 
 #include "../shared/eeprom_api.h"
-#include <EEPROM.h>
+#include <stdio.h>
 
 #ifndef MARLIN_EEPROM_SIZE
-  #define MARLIN_EEPROM_SIZE 0x1000 // 4KB
+  #define MARLIN_EEPROM_SIZE 0x1000 // 4KB of Emulated EEPROM
 #endif
-size_t PersistentStore::capacity()    { return MARLIN_EEPROM_SIZE; }
 
-bool PersistentStore::access_start()  { return EEPROM.begin(MARLIN_EEPROM_SIZE); }
-bool PersistentStore::access_finish() { EEPROM.end(); return true; }
+uint8_t buffer[MARLIN_EEPROM_SIZE];
+char filename[] = "eeprom.dat";
 
-bool PersistentStore::write_data(int &pos, const uint8_t *value, size_t size, uint16_t *crc) {
-  for (size_t i = 0; i < size; i++) {
-    EEPROM.write(pos++, value[i]);
-    crc16(crc, &value[i], 1);
+size_t PersistentStore::capacity() { return MARLIN_EEPROM_SIZE; }
+
+bool PersistentStore::access_start() {
+  const char eeprom_erase_value = 0xFF;
+  FILE * eeprom_file = fopen(filename, "rb");
+  if (!eeprom_file) return false;
+
+  fseek(eeprom_file, 0L, SEEK_END);
+  std::size_t file_size = ftell(eeprom_file);
+
+  if (file_size < MARLIN_EEPROM_SIZE) {
+    memset(buffer + file_size, eeprom_erase_value, MARLIN_EEPROM_SIZE - file_size);
   }
-  return false;
+  else {
+    fseek(eeprom_file, 0L, SEEK_SET);
+    fread(buffer, sizeof(uint8_t), sizeof(buffer), eeprom_file);
+  }
+
+  fclose(eeprom_file);
+  return true;
 }
 
-bool PersistentStore::read_data(int &pos, uint8_t *value, size_t size, uint16_t *crc, const bool writing/*=true*/) {
-  for (size_t i = 0; i < size; i++) {
-    uint8_t c = EEPROM.read(pos++);
-    if (writing) value[i] = c;
-    crc16(crc, &c, 1);
+bool PersistentStore::access_finish() {
+  FILE * eeprom_file = fopen(filename, "wb");
+  if (!eeprom_file) return false;
+  fwrite(buffer, sizeof(uint8_t), sizeof(buffer), eeprom_file);
+  fclose(eeprom_file);
+  return true;
+}
+
+bool PersistentStore::write_data(int &pos, const uint8_t *value, size_t size, uint16_t *crc) {
+  std::size_t bytes_written = 0;
+
+  for (std::size_t i = 0; i < size; i++) {
+    buffer[pos + i] = value[i];
+    bytes_written++;
   }
-  return false;
+
+  crc16(crc, value, size);
+  pos += size;
+  return (bytes_written != size);  // return true for any error
+}
+
+bool PersistentStore::read_data(int &pos, uint8_t *value, const size_t size, uint16_t *crc, const bool writing/*=true*/) {
+  std::size_t bytes_read = 0;
+  if (writing) {
+    for (std::size_t i = 0; i < size; i++) {
+      value[i] = buffer[pos + i];
+      bytes_read++;
+    }
+    crc16(crc, value, size);
+  }
+  else {
+    uint8_t temp[size];
+    for (std::size_t i = 0; i < size; i++) {
+      temp[i] = buffer[pos + i];
+      bytes_read++;
+    }
+    crc16(crc, temp, size);
+  }
+
+  pos += size;
+  return bytes_read != size;  // return true for any error
 }
 
 #endif // EEPROM_SETTINGS
-#endif // ARDUINO_ARCH_ESP32
+#endif // __PLAT_LINUX__

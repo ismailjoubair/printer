@@ -21,9 +21,13 @@
  */
 #pragma once
 
-//
-// Board-specific options need to be defined before HAL.h
-//
-#if MB(MKS_TINYBEE)
-  #define MAX_EXPANDER_BITS 24  // TinyBee has 3 x HC595
+#if DISABLED(NO_SD_HOST_DRIVE)
+  #define HAS_SD_HOST_DRIVE 1
+#endif
+
+#ifndef RX_BUFFER_SIZE
+  #define RX_BUFFER_SIZE 128
+#endif
+#ifndef TX_BUFFER_SIZE
+  #define TX_BUFFER_SIZE 32
 #endif

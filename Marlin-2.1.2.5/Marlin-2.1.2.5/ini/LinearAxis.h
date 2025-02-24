@@ -21,14 +21,25 @@
  */
 #pragma once
 
-#if USE_FALLBACK_EEPROM
-  #define FLASH_EEPROM_EMULATION
-#elif ANY(I2C_EEPROM, SPI_EEPROM)
-  #define USE_SHARED_EEPROM 1
-#endif
+#include <chrono>
+#include "Gpio.h"
 
-// LPC1768 boards seem to lose steps when saving to EEPROM during print (issue #20785)
-// TODO: Which other boards are incompatible?
-#if defined(MCU_LPC1768) && ENABLED(FLASH_EEPROM_EMULATION) && PRINTCOUNTER_SAVE_INTERVAL > 0
-  #define PRINTCOUNTER_SYNC
-#endif
+class LinearAxis: public Peripheral {
+public:
+  LinearAxis(pin_type enable, pin_type dir, pin_type step, pin_type end_min, pin_type end_max);
+  virtual ~LinearAxis();
+  void update();
+  void interrupt(GpioEvent ev);
+
+  pin_type enable_pin;
+  pin_type dir_pin;
+  pin_type step_pin;
+  pin_type min_pin;
+  pin_type max_pin;
+
+  int32_t position;
+  int32_t min_position;
+  int32_t max_position;
+  uint64_t last_update;
+
+};

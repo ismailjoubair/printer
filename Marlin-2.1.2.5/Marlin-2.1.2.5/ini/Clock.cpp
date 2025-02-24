@@ -19,16 +19,13 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  *
  */
-#pragma once
+#ifdef __PLAT_LINUX__
 
-#if USE_FALLBACK_EEPROM
-  #define FLASH_EEPROM_EMULATION
-#elif ANY(I2C_EEPROM, SPI_EEPROM)
-  #define USE_SHARED_EEPROM 1
-#endif
+#include "../../../inc/MarlinConfig.h"
+#include "Clock.h"
 
-// LPC1768 boards seem to lose steps when saving to EEPROM during print (issue #20785)
-// TODO: Which other boards are incompatible?
-#if defined(MCU_LPC1768) && ENABLED(FLASH_EEPROM_EMULATION) && PRINTCOUNTER_SAVE_INTERVAL > 0
-  #define PRINTCOUNTER_SYNC
-#endif
+std::chrono::nanoseconds Clock::startup = std::chrono::high_resolution_clock::now().time_since_epoch();
+uint32_t Clock::frequency = F_CPU;
+double Clock::time_multiplier = 1.0;
+
+#endif // __PLAT_LINUX__

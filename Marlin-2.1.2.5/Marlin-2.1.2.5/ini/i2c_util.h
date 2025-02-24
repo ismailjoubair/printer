@@ -21,14 +21,41 @@
  */
 #pragma once
 
-#if USE_FALLBACK_EEPROM
-  #define FLASH_EEPROM_EMULATION
-#elif ANY(I2C_EEPROM, SPI_EEPROM)
-  #define USE_SHARED_EEPROM 1
+/**
+ * HAL_LPC1768/include/i2c_util.h
+ */
+
+#include "../../../inc/MarlinConfigPre.h"
+
+#ifndef I2C_MASTER_ID
+  #define I2C_MASTER_ID 1
 #endif
 
-// LPC1768 boards seem to lose steps when saving to EEPROM during print (issue #20785)
-// TODO: Which other boards are incompatible?
-#if defined(MCU_LPC1768) && ENABLED(FLASH_EEPROM_EMULATION) && PRINTCOUNTER_SAVE_INTERVAL > 0
-  #define PRINTCOUNTER_SYNC
+#if I2C_MASTER_ID == 0
+  #define I2CDEV_M LPC_I2C0
+#elif I2C_MASTER_ID == 1
+  #define I2CDEV_M LPC_I2C1
+#elif I2C_MASTER_ID == 2
+  #define I2CDEV_M LPC_I2C2
+#else
+  #error "Master I2C device not defined!"
+#endif
+
+#include <lpc17xx_i2c.h>
+#include <lpc17xx_pinsel.h>
+#include <lpc17xx_libcfg_default.h>
+
+#ifdef __cplusplus
+  extern "C" {
+#endif
+
+void configure_i2c(const uint8_t clock_option);
+
+uint32_t _I2C_Start(LPC_I2C_TypeDef *I2Cx);
+void _I2C_Stop(LPC_I2C_TypeDef *I2Cx);
+
+#define I2C_status (LPC_I2C1->I2STAT & I2C_STAT_CODE_BITMASK)
+
+#ifdef __cplusplus
+  }
 #endif

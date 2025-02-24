@@ -21,14 +21,8 @@
  */
 #pragma once
 
-#if USE_FALLBACK_EEPROM
-  #define FLASH_EEPROM_EMULATION
-#elif ANY(I2C_EEPROM, SPI_EEPROM)
-  #define USE_SHARED_EEPROM 1
-#endif
-
-// LPC1768 boards seem to lose steps when saving to EEPROM during print (issue #20785)
-// TODO: Which other boards are incompatible?
-#if defined(MCU_LPC1768) && ENABLED(FLASH_EEPROM_EMULATION) && PRINTCOUNTER_SAVE_INTERVAL > 0
-  #define PRINTCOUNTER_SYNC
-#endif
+void u8g_i2c_init(const uint8_t clock_options);
+//uint8_t u8g_i2c_wait(uint8_t mask, uint8_t pos);
+uint8_t u8g_i2c_start(uint8_t sla);
+uint8_t u8g_i2c_send_byte(uint8_t data);
+void u8g_i2c_stop();

@@ -21,119 +21,45 @@
  */
 
 /**
- * HAL Timers for Arduino Due and compatible (SAM3X8E)
+ * Description:
+ *
+ * Timers for LPC1768
  */
 
-#ifdef ARDUINO_ARCH_SAM
+#ifdef TARGET_LPC1768
 
-// ------------------------
-// Includes
-// ------------------------
 #include "../../inc/MarlinConfig.h"
-#include "HAL.h"
 
-// ------------------------
-// Local defines
-// ------------------------
+void HAL_timer_init() {
+  SBI(LPC_SC->PCONP, SBIT_TIMER0);  // Power ON Timer 0
+  LPC_TIM0->PR = (HAL_TIMER_RATE) / (STEPPER_TIMER_RATE) - 1; // Use prescaler to set frequency if needed
 
-#define NUM_HARDWARE_TIMERS 9
-
-// ------------------------
-// Private Variables
-// ------------------------
-
-const tTimerConfig timer_config[NUM_HARDWARE_TIMERS] = {
-  { TC0, 0, TC0_IRQn,  3}, // 0 - [servo timer5]
-  { TC0, 1, TC1_IRQn,  0}, // 1
-  { TC0, 2, TC2_IRQn,  2}, // 2 - stepper
-  { TC1, 0, TC3_IRQn,  0}, // 3 - stepper for BOARD_ARCHIM1
-  { TC1, 1, TC4_IRQn, 15}, // 4 - temperature
-  { TC1, 2, TC5_IRQn,  3}, // 5 - [servo timer3]
-  { TC2, 0, TC6_IRQn, 14}, // 6 - tone
-  { TC2, 1, TC7_IRQn,  0}, // 7
-  { TC2, 2, TC8_IRQn,  0}, // 8
-};
-
-// ------------------------
-// Public functions
-// ------------------------
-
-/*
-  Timer_clock1: Prescaler 2 -> 42MHz
-  Timer_clock2: Prescaler 8 -> 10.5MHz
-  Timer_clock3: Prescaler 32 -> 2.625MHz
-  Timer_clock4: Prescaler 128 -> 656.25kHz
-*/
+  SBI(LPC_SC->PCONP, SBIT_TIMER1);  // Power ON Timer 1
+  LPC_TIM1->PR = (HAL_TIMER_RATE) / 1000000 - 1;
+}
 
 void HAL_timer_start(const uint8_t timer_num, const uint32_t frequency) {
-  Tc *tc = timer_config[timer_num].pTimerRegs;
-  IRQn_Type irq = timer_config[timer_num].IRQ_Id;
-  uint32_t channel = timer_config[timer_num].channel;
+  switch (timer_num) {
+    case MF_TIMER_STEP:
+      LPC_TIM0->MCR = _BV(SBIT_MR0I) | _BV(SBIT_MR0R); // Match on MR0, reset on MR0, interrupts when NVIC enables them
+      LPC_TIM0->MR0 = uint32_t(STEPPER_TIMER_RATE) / frequency; // Match value (period) to set frequency
+      LPC_TIM0->TCR = _BV(SBIT_CNTEN); // Counter Enable
 
-  // Disable interrupt, just in case it was already enabled
-  NVIC_DisableIRQ(irq);
+      NVIC_SetPriority(TIMER0_IRQn, NVIC_EncodePriority(0, 1, 0));
+      NVIC_EnableIRQ(TIMER0_IRQn);
+      break;
 
-  // We NEED memory barriers to ensure Interrupts are actually disabled!
-  // ( https://dzone.com/articles/nvic-disabling-interrupts-on-arm-cortex-m-and-the )
-  __DSB();
-  __ISB();
+    case MF_TIMER_TEMP:
+      LPC_TIM1->MCR = _BV(SBIT_MR0I) | _BV(SBIT_MR0R); // Match on MR0, reset on MR0, interrupts when NVIC enables them
+      LPC_TIM1->MR0 = uint32_t(TEMP_TIMER_RATE) / frequency;
+      LPC_TIM1->TCR = _BV(SBIT_CNTEN); // Counter Enable
 
-  // Disable timer interrupt
-  tc->TC_CHANNEL[channel].TC_IDR = TC_IDR_CPCS;
+      NVIC_SetPriority(TIMER1_IRQn, NVIC_EncodePriority(0, 2, 0));
+      NVIC_EnableIRQ(TIMER1_IRQn);
+      break;
 
-  // Stop timer, just in case, to be able to reconfigure it
-  TC_Stop(tc, channel);
-
-  pmc_set_writeprotect(false);
-  pmc_enable_periph_clk((uint32_t)irq);
-  NVIC_SetPriority(irq, timer_config[timer_num].priority);
-
-  // wave mode, reset counter on match with RC,
-  TC_Configure(tc, channel,
-      TC_CMR_WAVE
-    | TC_CMR_WAVSEL_UP_RC
-    | (HAL_TIMER_PRESCALER ==   2 ? TC_CMR_TCCLKS_TIMER_CLOCK1 : 0)
-    | (HAL_TIMER_PRESCALER ==   8 ? TC_CMR_TCCLKS_TIMER_CLOCK2 : 0)
-    | (HAL_TIMER_PRESCALER ==  32 ? TC_CMR_TCCLKS_TIMER_CLOCK3 : 0)
-    | (HAL_TIMER_PRESCALER == 128 ? TC_CMR_TCCLKS_TIMER_CLOCK4 : 0)
-  );
-
-  // Set compare value
-  TC_SetRC(tc, channel, VARIANT_MCK / (HAL_TIMER_PRESCALER) / frequency);
-
-  // And start timer
-  TC_Start(tc, channel);
-
-  // enable interrupt on RC compare
-  tc->TC_CHANNEL[channel].TC_IER = TC_IER_CPCS;
-
-  // Finally, enable IRQ
-  NVIC_EnableIRQ(irq);
+    default: break;
+  }
 }
 
-void HAL_timer_enable_interrupt(const uint8_t timer_num) {
-  IRQn_Type irq = timer_config[timer_num].IRQ_Id;
-  NVIC_EnableIRQ(irq);
-}
-
-void HAL_timer_disable_interrupt(const uint8_t timer_num) {
-  IRQn_Type irq = timer_config[timer_num].IRQ_Id;
-  NVIC_DisableIRQ(irq);
-
-  // We NEED memory barriers to ensure Interrupts are actually disabled!
-  // ( https://dzone.com/articles/nvic-disabling-interrupts-on-arm-cortex-m-and-the )
-  __DSB();
-  __ISB();
-}
-
-// missing from CMSIS: Check if interrupt is enabled or not
-static bool NVIC_GetEnabledIRQ(IRQn_Type IRQn) {
-  return TEST(NVIC->ISER[uint32_t(IRQn) >> 5], uint32_t(IRQn) & 0x1F);
-}
-
-bool HAL_timer_interrupt_enabled(const uint8_t timer_num) {
-  IRQn_Type irq = timer_config[timer_num].IRQ_Id;
-  return NVIC_GetEnabledIRQ(irq);
-}
-
-#endif // ARDUINO_ARCH_SAM
+#endif // TARGET_LPC1768

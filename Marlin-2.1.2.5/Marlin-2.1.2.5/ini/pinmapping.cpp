@@ -19,16 +19,14 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  *
  */
-#pragma once
+#ifdef __PLAT_LINUX__
 
-#if USE_FALLBACK_EEPROM
-  #define FLASH_EEPROM_EMULATION
-#elif ANY(I2C_EEPROM, SPI_EEPROM)
-  #define USE_SHARED_EEPROM 1
-#endif
+#include <pinmapping.h>
 
-// LPC1768 boards seem to lose steps when saving to EEPROM during print (issue #20785)
-// TODO: Which other boards are incompatible?
-#if defined(MCU_LPC1768) && ENABLED(FLASH_EEPROM_EMULATION) && PRINTCOUNTER_SAVE_INTERVAL > 0
-  #define PRINTCOUNTER_SYNC
-#endif
+#include "../../../gcode/parser.h"
+
+int16_t PARSED_PIN_INDEX(const char code, const int16_t dval) {
+  return parser.intval(code, dval);
+}
+
+#endif // __PLAT_LINUX__

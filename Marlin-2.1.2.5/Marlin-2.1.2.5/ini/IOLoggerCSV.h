@@ -21,14 +21,20 @@
  */
 #pragma once
 
-#if USE_FALLBACK_EEPROM
-  #define FLASH_EEPROM_EMULATION
-#elif ANY(I2C_EEPROM, SPI_EEPROM)
-  #define USE_SHARED_EEPROM 1
-#endif
+#include <mutex>
+#include <list>
+#include <fstream>
+#include "Gpio.h"
 
-// LPC1768 boards seem to lose steps when saving to EEPROM during print (issue #20785)
-// TODO: Which other boards are incompatible?
-#if defined(MCU_LPC1768) && ENABLED(FLASH_EEPROM_EMULATION) && PRINTCOUNTER_SAVE_INTERVAL > 0
-  #define PRINTCOUNTER_SYNC
-#endif
+class IOLoggerCSV: public IOLogger {
+public:
+  IOLoggerCSV(std::string filename);
+  virtual ~IOLoggerCSV();
+  void flush();
+  void log(GpioEvent ev);
+
+private:
+  std::ofstream file;
+  std::list<GpioEvent> events;
+  std::mutex vector_lock;
+};

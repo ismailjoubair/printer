@@ -21,14 +21,23 @@
  */
 #pragma once
 
-#if USE_FALLBACK_EEPROM
-  #define FLASH_EEPROM_EMULATION
-#elif ANY(I2C_EEPROM, SPI_EEPROM)
-  #define USE_SHARED_EEPROM 1
+/**
+ * LCD delay routines - used by all the drivers.
+ *
+ * These are based on the LPC1768 routines.
+ *
+ * Couldn't just call exact copies because the overhead
+ * results in a one microsecond delay taking about 4µS.
+ */
+
+#ifdef __cplusplus
+  extern "C" {
 #endif
 
-// LPC1768 boards seem to lose steps when saving to EEPROM during print (issue #20785)
-// TODO: Which other boards are incompatible?
-#if defined(MCU_LPC1768) && ENABLED(FLASH_EEPROM_EMULATION) && PRINTCOUNTER_SAVE_INTERVAL > 0
-  #define PRINTCOUNTER_SYNC
+void U8g_delay(int msec);
+void u8g_MicroDelay();
+void u8g_10MicroDelay();
+
+#ifdef __cplusplus
+  }
 #endif

@@ -19,16 +19,42 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  *
  */
-#pragma once
+#ifdef __PLAT_LINUX__
 
-#if USE_FALLBACK_EEPROM
-  #define FLASH_EEPROM_EMULATION
-#elif ANY(I2C_EEPROM, SPI_EEPROM)
-  #define USE_SHARED_EEPROM 1
-#endif
+#include "Clock.h"
+#include <stdio.h>
+#include "../../../inc/MarlinConfig.h"
 
-// LPC1768 boards seem to lose steps when saving to EEPROM during print (issue #20785)
-// TODO: Which other boards are incompatible?
-#if defined(MCU_LPC1768) && ENABLED(FLASH_EEPROM_EMULATION) && PRINTCOUNTER_SAVE_INTERVAL > 0
-  #define PRINTCOUNTER_SYNC
-#endif
+#include "Heater.h"
+
+Heater::Heater(pin_t heater, pin_t adc) {
+  heater_state = 0;
+  room_temp_raw = 150;
+  last = Clock::micros();
+  heater_pin = heater;
+  adc_pin = adc;
+  heat = 0.0;
+}
+
+Heater::~Heater() {
+}
+
+void Heater::update() {
+  // crude pwm read and cruder heat simulation
+  auto now = Clock::micros();
+  double delta = (now - last);
+  if (delta > 1000 ) {
+    heater_state = pwmcap.update(0xFFFF * Gpio::pin_map[heater_pin].value);
+    last = now;
+    heat += (heater_state - heat) * (delta / 1000000000.0);
+
+    NOLESS(heat, room_temp_raw);
+    Gpio::pin_map[analogInputToDigitalPin(adc_pin)].value = 0xFFFF - (uint16_t)heat;
+  }
+}
+
+void Heater::interrupt(GpioEvent ev) {
+  // unused
+}
+
+#endif // __PLAT_LINUX__

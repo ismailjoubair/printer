@@ -21,73 +21,99 @@
  */
 #pragma once
 
-#include "i2s.h"
-
 /**
- * Utility functions
+ * Fast I/O Routines for LPC1768/9
+ * Use direct port manipulation to save scads of processor time.
+ * Contributed by Triffid_Hunter and modified by Kliment, thinkyhead, Bob-the-Kuhn, et.al.
  */
 
-// I2S expander pin mapping.
-#define IS_I2S_EXPANDER_PIN(IO) TEST(IO, 7)
-#define I2S_EXPANDER_PIN_INDEX(IO) (IO & 0x7F)
+/**
+ * Description: Fast IO functions LPC1768
+ *
+ * For TARGET LPC1768
+ */
 
-// Set pin as input
-#define _SET_INPUT(IO)          pinMode(IO, INPUT)
+#include "../shared/Marduino.h"
 
-// Set pin as output
-#define _SET_OUTPUT(IO)         pinMode(IO, OUTPUT)
+#define PWM_PIN(P)            true // all pins are PWM capable
 
-// Set pin as input with pullup mode
-#define _PULLUP(IO, v)          pinMode(IO, v ? INPUT_PULLUP : INPUT)
+#define LPC_PIN(pin)          LPC176x::gpio_pin(pin)
+#define LPC_GPIO(port)        LPC176x::gpio_port(port)
 
-#if ENABLED(USE_ESP32_EXIO)
-  // Read a pin wrapper
-  #define READ(IO)                digitalRead(IO)
-  // Write to a pin wrapper
-  #define WRITE(IO, v)            (IO >= 100 ? Write_EXIO(IO, v) : digitalWrite(IO, v))
-#else
-  // Read a pin wrapper
-  #define READ(IO)                (IS_I2S_EXPANDER_PIN(IO) ? i2s_state(I2S_EXPANDER_PIN_INDEX(IO)) : digitalRead(IO))
-  // Write to a pin wrapper
-  #define WRITE(IO, v)            (IS_I2S_EXPANDER_PIN(IO) ? i2s_write(I2S_EXPANDER_PIN_INDEX(IO), v) : digitalWrite(IO, v))
-#endif
+#define SET_DIR_INPUT(IO)     LPC176x::gpio_set_input(IO)
+#define SET_DIR_OUTPUT(IO)    LPC176x::gpio_set_output(IO)
 
-// Set pin as input wrapper (0x80 | (v << 5) | (IO - 100))
-#define SET_INPUT(IO)           _SET_INPUT(IO)
+#define SET_MODE(IO, mode)    pinMode(IO, mode)
 
-// Set pin as input with pullup wrapper
-#define SET_INPUT_PULLUP(IO)    do{ _SET_INPUT(IO); _PULLUP(IO, HIGH); }while(0)
+#define WRITE_PIN_SET(IO)     LPC176x::gpio_set(IO)
+#define WRITE_PIN_CLR(IO)     LPC176x::gpio_clear(IO)
 
-// Set pin as input with pulldown (substitution)
-#define SET_INPUT_PULLDOWN      SET_INPUT
+#define READ_PIN(IO)          LPC176x::gpio_get(IO)
+#define WRITE_PIN(IO,V)       LPC176x::gpio_set(IO, V)
 
-// Set pin as output wrapper
-#define SET_OUTPUT(IO)          do{ _SET_OUTPUT(IO); }while(0)
+/**
+ * Magic I/O routines
+ *
+ * Now you can simply SET_OUTPUT(STEP); WRITE(STEP, HIGH); WRITE(STEP, LOW);
+ *
+ * Why double up on these macros? see https://gcc.gnu.org/onlinedocs/gcc-4.8.5/cpp/Stringification.html
+ */
 
-// Set pin as PWM
-#define SET_PWM                 SET_OUTPUT
+/// Read a pin
+#define _READ(IO)             READ_PIN(IO)
 
-// Set pin as output and init
-#define OUT_WRITE(IO,V)         do{ _SET_OUTPUT(IO); WRITE(IO,V); }while(0)
+/// Write to a pin
+#define _WRITE(IO,V)          WRITE_PIN(IO,V)
+
+/// toggle a pin
+#define _TOGGLE(IO)           LPC176x::gpio_toggle(IO)
+
+/// set pin as input
+#define _SET_INPUT(IO)        SET_DIR_INPUT(IO)
+
+/// set pin as output
+#define _SET_OUTPUT(IO)       SET_DIR_OUTPUT(IO)
+
+/// set pin as input with pullup mode
+#define _PULLUP(IO,V)         pinMode(IO, (V) ? INPUT_PULLUP : INPUT)
+
+/// set pin as input with pulldown mode
+#define _PULLDOWN(IO,V)       pinMode(IO, (V) ? INPUT_PULLDOWN : INPUT)
+
+/// check if pin is an input
+#define _IS_INPUT(IO)         (!LPC176x::gpio_get_dir(IO))
+
+/// check if pin is an output
+#define _IS_OUTPUT(IO)        (LPC176x::gpio_get_dir(IO))
+
+/// Read a pin wrapper
+#define READ(IO)              _READ(IO)
+
+/// Write to a pin wrapper
+#define WRITE(IO,V)           _WRITE(IO,V)
+
+/// toggle a pin wrapper
+#define TOGGLE(IO)            _TOGGLE(IO)
+
+/// set pin as input wrapper
+#define SET_INPUT(IO)         _SET_INPUT(IO)
+/// set pin as input with pullup wrapper
+#define SET_INPUT_PULLUP(IO)  do{ _SET_INPUT(IO); _PULLUP(IO, HIGH); }while(0)
+/// set pin as input with pulldown wrapper
+#define SET_INPUT_PULLDOWN(IO) do{ _SET_INPUT(IO); _PULLDOWN(IO, HIGH); }while(0)
+/// set pin as output wrapper  -  reads the pin and sets the output to that value
+#define SET_OUTPUT(IO)        do{ _WRITE(IO, _READ(IO)); _SET_OUTPUT(IO); }while(0)
+// set pin as PWM
+#define SET_PWM               SET_OUTPUT
+
+/// check if pin is an input wrapper
+#define IS_INPUT(IO)          _IS_INPUT(IO)
+/// check if pin is an output wrapper
+#define IS_OUTPUT(IO)         _IS_OUTPUT(IO)
+
+// Shorthand
+#define OUT_WRITE(IO,V)       do{ SET_OUTPUT(IO); WRITE(IO,V); }while(0)
 
 // digitalRead/Write wrappers
-#define extDigitalRead(IO)      digitalRead(IO)
-#define extDigitalWrite(IO,V)   digitalWrite(IO,V)
-
-// PWM outputs
-#define PWM_PIN(P)              (P < 34 || P > 127) // NOTE Pins >= 34 are input only on ESP32, so they can't be used for output.
-
-// Toggle pin value
-#define TOGGLE(IO)              WRITE(IO, !READ(IO))
-
-//
-// Ports and functions
-//
-
-// UART
-#define RXD        3
-#define TXD        1
-
-// TWI (I2C)
-#define SCL        5
-#define SDA        4
+#define extDigitalRead(IO)    digitalRead(IO)
+#define extDigitalWrite(IO,V) digitalWrite(IO,V)

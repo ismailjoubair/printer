@@ -21,14 +21,23 @@
  */
 #pragma once
 
-#if USE_FALLBACK_EEPROM
-  #define FLASH_EEPROM_EMULATION
-#elif ANY(I2C_EEPROM, SPI_EEPROM)
-  #define USE_SHARED_EEPROM 1
+/**
+ * digipot_mcp4451_I2C_routines.h
+ * Adapted from https://www-users.cs.york.ac.uk/~pcc/MCP/HAPR-Course-web/CMSIS/examples/html/master_8c_source.html
+ */
+
+#ifdef __cplusplus
+  extern "C" {
 #endif
 
-// LPC1768 boards seem to lose steps when saving to EEPROM during print (issue #20785)
-// TODO: Which other boards are incompatible?
-#if defined(MCU_LPC1768) && ENABLED(FLASH_EEPROM_EMULATION) && PRINTCOUNTER_SAVE_INTERVAL > 0
-  #define PRINTCOUNTER_SYNC
+#include <lpc17xx_i2c.h>
+#include <lpc17xx_pinsel.h>
+#include <lpc17xx_libcfg_default.h>
+#include "i2c_util.h"
+
+uint8_t digipot_mcp4451_start(uint8_t sla);
+uint8_t digipot_mcp4451_send_byte(uint8_t data);
+
+#ifdef __cplusplus
+  }
 #endif

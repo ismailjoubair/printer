@@ -21,14 +21,27 @@
  */
 #pragma once
 
-#if USE_FALLBACK_EEPROM
-  #define FLASH_EEPROM_EMULATION
-#elif ANY(I2C_EEPROM, SPI_EEPROM)
-  #define USE_SHARED_EEPROM 1
-#endif
+#include "Gpio.h"
 
-// LPC1768 boards seem to lose steps when saving to EEPROM during print (issue #20785)
-// TODO: Which other boards are incompatible?
-#if defined(MCU_LPC1768) && ENABLED(FLASH_EEPROM_EMULATION) && PRINTCOUNTER_SAVE_INTERVAL > 0
-  #define PRINTCOUNTER_SYNC
-#endif
+struct LowpassFilter {
+  uint64_t data_delay = 0;
+  uint16_t update(uint16_t value) {
+    data_delay += value - (data_delay >> 6);
+    return uint16_t(data_delay >> 6);
+  }
+};
+
+class Heater: public Peripheral {
+public:
+  Heater(pin_t heater, pin_t adc);
+  virtual ~Heater();
+  void interrupt(GpioEvent ev);
+  void update();
+
+  pin_t heater_pin, adc_pin;
+  uint16_t room_temp_raw;
+  uint16_t heater_state;
+  LowpassFilter pwmcap;
+  double heat;
+  uint64_t last;
+};
