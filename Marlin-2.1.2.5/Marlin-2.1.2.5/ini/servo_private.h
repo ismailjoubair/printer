@@ -1,6 +1,6 @@
 /**
  * Marlin 3D Printer Firmware
- * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+ * Copyright (c) 2021 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
  *
  * Based on Sprinter and grbl.
  * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
@@ -45,6 +45,7 @@
  *           Version 2 Copyright (c) 2009 Michael Margolis.  All right reserved.
  *
  * The only modification was to update/delete macros to match the LPC176x.
+ *
  */
 
 #include <stdint.h>

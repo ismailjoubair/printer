@@ -1,6 +1,6 @@
 /**
  * Marlin 3D Printer Firmware
- * Copyright (c) 2021 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+ * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
  *
  * Based on Sprinter and grbl.
  * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
@@ -21,6 +21,14 @@
  */
 #pragma once
 
-#include <SPI.h>
+/**
+ * SAMD51 HAL developed by Giuliano Zaro (AKA GMagician)
+ */
 
-using MarlinSPI = SPIClass;
+#include "../../core/serial_hook.h"
+
+typedef Serial1Class<Uart> UartT;
+
+extern UartT Serial2;
+extern UartT Serial3;
+extern UartT Serial4;

@@ -1,6 +1,6 @@
 /**
  * Marlin 3D Printer Firmware
- * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+ * Copyright (c) 2021 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
  *
  * Based on Sprinter and grbl.
  * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
@@ -65,8 +65,8 @@ private:
   static uint16_t getRawData(const XPTCoordinate coordinate);
   static bool isTouched();
 
-  static void DataTransferBegin() { WRITE(TOUCH_CS_PIN, LOW); };
-  static void DataTransferEnd() { WRITE(TOUCH_CS_PIN, HIGH); };
+  static void DataTransferBegin();
+  static void DataTransferEnd();
   #if ENABLED(TOUCH_BUTTONS_HW_SPI)
     static uint16_t HardwareIO(uint16_t data);
   #endif

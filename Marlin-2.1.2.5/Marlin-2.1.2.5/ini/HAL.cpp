@@ -19,251 +19,722 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  *
  */
-#ifdef TARGET_LPC1768
+
+/**
+ * SAMD51 HAL developed by Giuliano Zaro (AKA GMagician)
+ */
+#ifdef __SAMD51__
 
 #include "../../inc/MarlinConfig.h"
-#include "../shared/Delay.h"
-#include "../../core/millis_t.h"
+#include <Adafruit_ZeroDMA.h>
+#include <wiring_private.h>
 
-#include <usb/usb.h>
-#include <usb/usbcfg.h>
-#include <usb/usbhw.h>
-#include <usb/usbcore.h>
-#include <usb/cdc.h>
-#include <usb/cdcuser.h>
-#include <usb/mscuser.h>
-#include <CDCSerial.h>
-#include <usb/mscuser.h>
+#ifdef ADAFRUIT_GRAND_CENTRAL_M4
+  #if USING_HW_SERIALUSB
+    DefaultSerial1 MSerial0(false, Serial);
+  #endif
+  #if USING_HW_SERIAL0
+    DefaultSerial2 MSerial1(false, Serial1);
+  #endif
+  #if USING_HW_SERIAL1
+    DefaultSerial3 MSerial2(false, Serial2);
+  #endif
+  #if USING_HW_SERIAL2
+    DefaultSerial4 MSerial3(false, Serial3);
+  #endif
+  #if USING_HW_SERIAL3
+    DefaultSerial5 MSerial4(false, Serial4);
+  #endif
+#endif
 
-DefaultSerial1 USBSerial(false, UsbSerial);
+#define GET_TEMP_0_ADC()            TERN(HAS_TEMP_ADC_0,        PIN_TO_ADC(TEMP_0_PIN),                 -1)
+#define GET_TEMP_1_ADC()            TERN(HAS_TEMP_ADC_1,        PIN_TO_ADC(TEMP_1_PIN),                 -1)
+#define GET_TEMP_2_ADC()            TERN(HAS_TEMP_ADC_2,        PIN_TO_ADC(TEMP_2_PIN),                 -1)
+#define GET_TEMP_3_ADC()            TERN(HAS_TEMP_ADC_3,        PIN_TO_ADC(TEMP_3_PIN),                 -1)
+#define GET_TEMP_4_ADC()            TERN(HAS_TEMP_ADC_4,        PIN_TO_ADC(TEMP_4_PIN),                 -1)
+#define GET_TEMP_5_ADC()            TERN(HAS_TEMP_ADC_5,        PIN_TO_ADC(TEMP_5_PIN),                 -1)
+#define GET_TEMP_6_ADC()            TERN(HAS_TEMP_ADC_6,        PIN_TO_ADC(TEMP_6_PIN),                 -1)
+#define GET_TEMP_7_ADC()            TERN(HAS_TEMP_ADC_7,        PIN_TO_ADC(TEMP_7_PIN),                 -1)
+#define GET_BED_ADC()               TERN(HAS_TEMP_ADC_BED,      PIN_TO_ADC(TEMP_BED_PIN),               -1)
+#define GET_CHAMBER_ADC()           TERN(HAS_TEMP_ADC_CHAMBER,  PIN_TO_ADC(TEMP_CHAMBER_PIN),           -1)
+#define GET_PROBE_ADC()             TERN(HAS_TEMP_ADC_PROBE,    PIN_TO_ADC(TEMP_PROBE_PIN),             -1)
+#define GET_COOLER_ADC()            TERN(HAS_TEMP_ADC_COOLER,   PIN_TO_ADC(TEMP_COOLER_PIN),            -1)
+#define GET_BOARD_ADC()             TERN(HAS_TEMP_ADC_BOARD,    PIN_TO_ADC(TEMP_BOARD_PIN),             -1)
+#define GET_SOC_ADC()               TERN(HAS_TEMP_ADC_BOARD,    PIN_TO_ADC(TEMP_BOARD_PIN),             -1)
+#define GET_FILAMENT_WIDTH_ADC()    TERN(FILAMENT_WIDTH_SENSOR, PIN_TO_ADC(FILWIDTH_PIN),               -1)
+#define GET_BUTTONS_ADC()           TERN(HAS_ADC_BUTTONS,       PIN_TO_ADC(ADC_KEYPAD_PIN),             -1)
+#define GET_JOY_ADC_X()             TERN(HAS_JOY_ADC_X,         PIN_TO_ADC(JOY_X_PIN),                  -1)
+#define GET_JOY_ADC_Y()             TERN(HAS_JOY_ADC_Y,         PIN_TO_ADC(JOY_Y_PIN),                  -1)
+#define GET_JOY_ADC_Z()             TERN(HAS_JOY_ADC_Z,         PIN_TO_ADC(JOY_Z_PIN),                  -1)
+#define GET_POWERMON_ADC_CURRENT()  TERN(POWER_MONITOR_CURRENT, PIN_TO_ADC(POWER_MONITOR_CURRENT_PIN),  -1)
+#define GET_POWERMON_ADC_VOLTS()    TERN(POWER_MONITOR_VOLTAGE, PIN_TO_ADC(POWER_MONITOR_VOLTAGE_PIN),  -1)
 
-uint32_t MarlinHAL::adc_result = 0;
-pin_t MarlinHAL::adc_pin = 0;
+#define IS_ADC_REQUIRED(n) ( \
+     GET_TEMP_0_ADC() == n || GET_TEMP_1_ADC() == n || GET_TEMP_2_ADC() == n || GET_TEMP_3_ADC() == n \
+  || GET_TEMP_4_ADC() == n || GET_TEMP_5_ADC() == n || GET_TEMP_6_ADC() == n || GET_TEMP_7_ADC() == n \
+  || GET_BED_ADC() == n \
+  || GET_CHAMBER_ADC() == n \
+  || GET_PROBE_ADC() == n \
+  || GET_COOLER_ADC() == n \
+  || GET_BOARD_ADC() == n \
+  || GET_FILAMENT_WIDTH_ADC() == n \
+  || GET_BUTTONS_ADC() == n \
+  || GET_JOY_ADC_X() == n || GET_JOY_ADC_Y() == n || GET_JOY_ADC_Z() == n \
+  || GET_POWERMON_ADC_CURRENT() == n || GET_POWERMON_ADC_VOLTS() == n \
+)
 
-// U8glib required functions
-extern "C" {
-  void u8g_xMicroDelay(uint16_t val) { DELAY_US(val); }
-  void u8g_MicroDelay()              { u8g_xMicroDelay(1); }
-  void u8g_10MicroDelay()            { u8g_xMicroDelay(10); }
-  void u8g_Delay(uint16_t val)       { delay(val); }
-}
+#if IS_ADC_REQUIRED(0)
+  #define ADC0_IS_REQUIRED 1
+  #define FIRST_ADC     0
+#else
+  #define FIRST_ADC     1
+#endif
+#if IS_ADC_REQUIRED(1)
+  #define ADC1_IS_REQUIRED 1
+  #define LAST_ADC      1
+#else
+  #define LAST_ADC      0
+#endif
+#if ADC0_IS_REQUIRED || ADC1_IS_REQUIRED
+  #define ADC_IS_REQUIRED 1
+  #define DMA_IS_REQUIRED 1
+#endif
 
-// return free heap space
-int freeMemory() {
-  char stack_end;
-  void *heap_start = malloc(sizeof(uint32_t));
-  if (heap_start == 0) return 0;
-
-  uint32_t result = (uint32_t)&stack_end - (uint32_t)heap_start;
-  free(heap_start);
-  return result;
-}
-
-extern "C" {
-  #include <debug_frmwrk.h>
-  int isLPC1769();
-  void disk_timerproc();
-}
-
-extern uint32_t MSC_SD_Init(uint8_t pdrv);
-
-void SysTick_Callback() { disk_timerproc(); }
-
-TERN_(POSTMORTEM_DEBUGGING, extern void install_min_serial());
-
-void MarlinHAL::init() {
-
-  // Init LEDs
-  #if PIN_EXISTS(LED)
-    SET_DIR_OUTPUT(LED_PIN);
-    WRITE_PIN_CLR(LED_PIN);
-    #if PIN_EXISTS(LED2)
-      SET_DIR_OUTPUT(LED2_PIN);
-      WRITE_PIN_CLR(LED2_PIN);
-      #if PIN_EXISTS(LED3)
-        SET_DIR_OUTPUT(LED3_PIN);
-        WRITE_PIN_CLR(LED3_PIN);
-        #if PIN_EXISTS(LED4)
-          SET_DIR_OUTPUT(LED4_PIN);
-          WRITE_PIN_CLR(LED4_PIN);
-        #endif
-      #endif
-    #endif
-
-    // Flash status LED 3 times to indicate Marlin has started booting
-    for (uint8_t i = 0; i < 6; ++i) {
-      TOGGLE(LED_PIN);
-      delay(100);
-    }
+enum ADCIndex {
+  #if GET_TEMP_0_ADC() == 0
+    TEMP_0,
+  #endif
+  #if GET_TEMP_1_ADC() == 0
+    TEMP_1,
+  #endif
+  #if GET_TEMP_2_ADC() == 0
+    TEMP_2,
+  #endif
+  #if GET_TEMP_3_ADC() == 0
+    TEMP_3,
+  #endif
+  #if GET_TEMP_4_ADC() == 0
+    TEMP_4,
+  #endif
+  #if GET_TEMP_5_ADC() == 0
+    TEMP_5,
+  #endif
+  #if GET_TEMP_6_ADC() == 0
+    TEMP_6,
+  #endif
+  #if GET_TEMP_7_ADC() == 0
+    TEMP_7,
+  #endif
+  #if GET_BED_ADC() == 0
+    TEMP_BED,
+  #endif
+  #if GET_CHAMBER_ADC() == 0
+    TEMP_CHAMBER,
+  #endif
+  #if GET_PROBE_ADC() == 0
+    TEMP_PROBE,
+  #endif
+  #if GET_COOLER_ADC() == 0
+    TEMP_COOLER,
+  #endif
+  #if GET_BOARD_ADC() == 0
+    TEMP_BOARD,
+  #endif
+  #if GET_FILAMENT_WIDTH_ADC() == 0
+    FILWIDTH,
+  #endif
+  #if GET_BUTTONS_ADC() == 0
+    ADC_KEY,
+  #endif
+  #if GET_JOY_ADC_X() == 0
+    JOY_X,
+  #endif
+  #if GET_JOY_ADC_Y() == 0
+    JOY_Y,
+  #endif
+  #if GET_JOY_ADC_Z() == 0
+    JOY_Z,
+  #endif
+  #if GET_POWERMON_ADC_CURRENT() == 0
+    POWERMON_CURRENT,
+  #endif
+  #if GET_POWERMON_ADC_VOLTS() == 0
+    POWERMON_VOLTAGE,
   #endif
 
-  // Init Servo Pins
-  #define INIT_SERVO(N) OUT_WRITE(SERVO##N##_PIN, LOW)
-  #if HAS_SERVO_0
-    INIT_SERVO(0);
+  // Indexes for ADC1 after those for ADC0
+
+  #if GET_TEMP_0_ADC() == 1
+    TEMP_0,
   #endif
-  #if HAS_SERVO_1
-    INIT_SERVO(1);
+  #if GET_TEMP_1_ADC() == 1
+    TEMP_1,
   #endif
-  #if HAS_SERVO_2
-    INIT_SERVO(2);
+  #if GET_TEMP_2_ADC() == 1
+    TEMP_2,
   #endif
-  #if HAS_SERVO_3
-    INIT_SERVO(3);
+  #if GET_TEMP_3_ADC() == 1
+    TEMP_3,
   #endif
-  #if HAS_SERVO_4
-    INIT_SERVO(4);
+  #if GET_TEMP_4_ADC() == 1
+    TEMP_4,
   #endif
-  #if HAS_SERVO_5
-    INIT_SERVO(5);
+  #if GET_TEMP_5_ADC() == 1
+    TEMP_5,
   #endif
-
-  //debug_frmwrk_init();
-  //_DBG("\n\nDebug running\n");
-  // Initialize the SD card chip select pins as soon as possible
-  #if PIN_EXISTS(SD_SS)
-    OUT_WRITE(SD_SS_PIN, HIGH);
+  #if GET_TEMP_6_ADC() == 1
+    TEMP_6,
   #endif
-
-  #if PIN_EXISTS(ONBOARD_SD_CS) && ONBOARD_SD_CS_PIN != SD_SS_PIN
-    OUT_WRITE(ONBOARD_SD_CS_PIN, HIGH);
+  #if GET_TEMP_7_ADC() == 1
+    TEMP_7,
   #endif
-
-  #ifdef LPC1768_ENABLE_CLKOUT_12M
-   /**
-    * CLKOUTCFG register
-    * bit 8 (CLKOUT_EN) = enables CLKOUT signal. Disabled for now to prevent glitch when enabling GPIO.
-    * bits 7:4 (CLKOUTDIV) = set to 0 for divider setting of /1
-    * bits 3:0 (CLKOUTSEL) = set to 1 to select main crystal oscillator as CLKOUT source
-    */
-    LPC_SC->CLKOUTCFG = (0<<8)|(0<<4)|(1<<0);
-    // set P1.27 pin to function 01 (CLKOUT)
-    PINSEL_CFG_Type PinCfg;
-    PinCfg.Portnum = 1;
-    PinCfg.Pinnum = 27;
-    PinCfg.Funcnum = 1;    // function 01 (CLKOUT)
-    PinCfg.OpenDrain = 0;  // not open drain
-    PinCfg.Pinmode = 2;    // no pull-up/pull-down
-    PINSEL_ConfigPin(&PinCfg);
-    // now set CLKOUT_EN bit
-    SBI(LPC_SC->CLKOUTCFG, 8);
+  #if GET_BED_ADC() == 1
+    TEMP_BED,
   #endif
-
-  USB_Init();                               // USB Initialization
-  USB_Connect(false);                       // USB clear connection
-  delay(1000);                              // Give OS time to notice
-  USB_Connect(true);
-
-  TERN_(HAS_SD_HOST_DRIVE, MSC_SD_Init(0)); // Enable USB SD card access
-
-  const millis_t usb_timeout = millis() + 2000;
-  while (!USB_Configuration && PENDING(millis(), usb_timeout)) {
-    delay(50);
-    idletask();
-    #if PIN_EXISTS(LED)
-      TOGGLE(LED_PIN);     // Flash quickly during USB initialization
-    #endif
-  }
-
-  HAL_timer_init();
-
-  TERN_(POSTMORTEM_DEBUGGING, install_min_serial()); // Install the min serial handler
-}
-
-#include "../../sd/cardreader.h"
-
-// HAL idle task
-void MarlinHAL::idletask() {
-  #if HAS_SHARED_MEDIA
-    // If Marlin is using the SD card we need to lock it to prevent access from
-    // a PC via USB.
-    // Other HALs use IS_SD_PRINTING() and IS_SD_FILE_OPEN() to check for access but
-    // this will not reliably detect delete operations. To be safe we will lock
-    // the disk if Marlin has it mounted. Unfortunately there is currently no way
-    // to unmount the disk from the LCD menu.
-    // if (IS_SD_PRINTING() || IS_SD_FILE_OPEN())
-    if (card.isMounted())
-      MSC_Aquire_Lock();
-    else
-      MSC_Release_Lock();
+  #if GET_CHAMBER_ADC() == 1
+    TEMP_CHAMBER,
   #endif
-  // Perform USB stack housekeeping
-  MSC_RunDeferredCommands();
-}
-
-void MarlinHAL::reboot() { NVIC_SystemReset(); }
-
-uint8_t MarlinHAL::get_reset_source() {
-  #if ENABLED(USE_WATCHDOG)
-    if (watchdog_timed_out()) return RST_WATCHDOG;
+  #if GET_PROBE_ADC() == 1
+    TEMP_PROBE,
   #endif
-  return RST_POWER_ON;
-}
-
-void MarlinHAL::clear_reset_source() { watchdog_clear_timeout_flag(); }
-
-void flashFirmware(const int16_t) {
-  delay(500);          // Give OS time to disconnect
-  USB_Connect(false);  // USB clear connection
-  delay(1000);         // Give OS time to notice
-  hal.reboot();
-}
+  #if GET_COOLER_ADC() == 1
+    TEMP_COOLER,
+  #endif
+  #if GET_BOARD_ADC() == 1
+    TEMP_BOARD,
+  #endif
+  #if GET_FILAMENT_WIDTH_ADC() == 1
+    FILWIDTH,
+  #endif
+  #if GET_BUTTONS_ADC() == 1
+    ADC_KEY,
+  #endif
+  #if GET_JOY_ADC_X() == 1
+    JOY_X,
+  #endif
+  #if GET_JOY_ADC_Y() == 1
+    JOY_Y,
+  #endif
+  #if GET_JOY_ADC_Z() == 1
+    JOY_Z,
+  #endif
+  #if GET_POWERMON_ADC_CURRENT() == 1
+    POWERMON_CURRENT,
+  #endif
+  #if GET_POWERMON_ADC_VOLTS() == 1
+    POWERMON_VOLTAGE,
+  #endif
+  ADC_COUNT
+};
 
 #if ENABLED(USE_WATCHDOG)
 
-  #include <lpc17xx_wdt.h>
-
-  #define WDT_TIMEOUT_US TERN(WATCHDOG_DURATION_8S, 8000000, 4000000) // 4 or 8 second timeout
+  #define WDT_TIMEOUT_REG TERN(WATCHDOG_DURATION_8S, WDT_CONFIG_PER_CYC8192, WDT_CONFIG_PER_CYC4096) // 4 or 8 second timeout
 
   void MarlinHAL::watchdog_init() {
-    #if ENABLED(WATCHDOG_RESET_MANUAL)
-      // We enable the watchdog timer, but only for the interrupt.
+    // The low-power oscillator used by the WDT runs at 32,768 Hz with
+    // a 1:32 prescale, thus 1024 Hz, though probably not super precise.
 
-      // Configure WDT to only trigger an interrupt
-      // Disable WDT interrupt (just in case, to avoid triggering it!)
-      NVIC_DisableIRQ(WDT_IRQn);
+    // Setup WDT clocks
+    MCLK->APBAMASK.bit.OSC32KCTRL_ = true;
+    MCLK->APBAMASK.bit.WDT_ = true;
+    OSC32KCTRL->OSCULP32K.bit.EN1K = true;  // Enable out 1K (this is what WDT uses)
 
-      // We NEED memory barriers to ensure Interrupts are actually disabled!
-      // ( https://dzone.com/articles/nvic-disabling-interrupts-on-arm-cortex-m-and-the )
-      __DSB();
-      __ISB();
+    WDT->CTRLA.bit.ENABLE = false;          // Disable watchdog for config
+    SYNC(WDT->SYNCBUSY.bit.ENABLE);
 
-      // Configure WDT to only trigger an interrupt
-      // Initialize WDT with the given parameters
-      WDT_Init(WDT_CLKSRC_IRC, WDT_MODE_INT_ONLY);
+    WDT->INTENCLR.reg = WDT_INTENCLR_EW;    // Disable early warning interrupt
+    WDT->CONFIG.reg = WDT_TIMEOUT_REG;      // Set a 4s or 8s period for chip reset
 
-      // Configure and enable WDT interrupt.
-      NVIC_ClearPendingIRQ(WDT_IRQn);
-      NVIC_SetPriority(WDT_IRQn, 0); // Use highest priority, so we detect all kinds of lockups
-      NVIC_EnableIRQ(WDT_IRQn);
-    #else
-      WDT_Init(WDT_CLKSRC_IRC, WDT_MODE_RESET);
-    #endif
-    WDT_Start(WDT_TIMEOUT_US);
+    hal.watchdog_refresh();
+
+    WDT->CTRLA.reg = WDT_CTRLA_ENABLE;      // Start watchdog now in normal mode
+    SYNC(WDT->SYNCBUSY.bit.ENABLE);
   }
 
+  // Reset watchdog. MUST be called at least every 4 seconds after the
+  // first watchdog_init or SAMD will go into emergency procedures.
   void MarlinHAL::watchdog_refresh() {
-    WDT_Feed();
-    #if DISABLED(PINS_DEBUGGING) && PIN_EXISTS(LED)
-      TOGGLE(LED_PIN);  // heartbeat indicator
-    #endif
+    SYNC(WDT->SYNCBUSY.bit.CLEAR);        // Test first if previous is 'ongoing' to save time waiting for command execution
+    WDT->CLEAR.reg = WDT_CLEAR_CLEAR_KEY;
   }
 
-  // Timeout state
-  bool MarlinHAL::watchdog_timed_out() { return TEST(WDT_ReadTimeOutFlag(), 0); }
-  void MarlinHAL::watchdog_clear_timeout_flag() { WDT_ClrTimeOutFlag(); }
+#endif
 
-#endif // USE_WATCHDOG
+// ------------------------
+// Types
+// ------------------------
 
-#include "../../../gcode/parser.h"
+#if DMA_IS_REQUIRED
 
-// For M42/M43, scan command line for pin code
-//   return index into pin map array if found and the pin is valid.
-//   return dval if not found or not a valid pin.
-int16_t PARSED_PIN_INDEX(const char code, const int16_t dval) {
-  const uint16_t val = (uint16_t)parser.intval(code, -1), port = val / 100, pin = val % 100;
-  const  int16_t ind = (port < ((NUM_DIGITAL_PINS) >> 5) && pin < 32) ? ((port << 5) | pin) : -2;
-  return ind > -1 ? ind : dval;
+  // Struct must be 32 bits aligned because of DMA accesses but fields needs to be 8 bits packed
+  typedef struct  __attribute__((aligned(4), packed)) {
+    ADC_INPUTCTRL_Type INPUTCTRL;
+  } HAL_DMA_DAC_Registers;    // DMA transferred registers
+
+#endif
+
+// ------------------------
+// Private Variables
+// ------------------------
+
+#if ADC_IS_REQUIRED
+
+  // Pins used by ADC inputs. Order must be ADC0 inputs first then ADC1
+  static constexpr uint8_t adc_pins[ADC_COUNT] = {
+    // ADC0 pins
+    #if GET_TEMP_0_ADC() == 0
+      TEMP_0_PIN,
+    #endif
+    #if GET_TEMP_1_ADC() == 0
+      TEMP_1_PIN,
+    #endif
+    #if GET_TEMP_2_ADC() == 0
+      TEMP_2_PIN,
+    #endif
+    #if GET_TEMP_3_ADC() == 0
+      TEMP_3_PIN,
+    #endif
+    #if GET_TEMP_4_ADC() == 0
+      TEMP_4_PIN,
+    #endif
+    #if GET_TEMP_5_ADC() == 0
+      TEMP_5_PIN,
+    #endif
+    #if GET_TEMP_6_ADC() == 0
+      TEMP_6_PIN,
+    #endif
+    #if GET_TEMP_7_ADC() == 0
+      TEMP_7_PIN,
+    #endif
+    #if GET_BED_ADC() == 0
+      TEMP_BED_PIN,
+    #endif
+    #if GET_CHAMBER_ADC() == 0
+      TEMP_CHAMBER_PIN,
+    #endif
+    #if GET_PROBE_ADC() == 0
+      TEMP_PROBE_PIN,
+    #endif
+    #if GET_COOLER_ADC() == 0
+      TEMP_COOLER_PIN,
+    #endif
+    #if GET_BOARD_ADC() == 0
+      TEMP_BOARD_PIN,
+    #endif
+    #if GET_FILAMENT_WIDTH_ADC() == 0
+      FILWIDTH_PIN,
+    #endif
+    #if GET_BUTTONS_ADC() == 0
+      ADC_KEYPAD_PIN,
+    #endif
+    #if GET_JOY_ADC_X() == 0
+      JOY_X_PIN,
+    #endif
+    #if GET_JOY_ADC_Y() == 0
+      JOY_Y_PIN,
+    #endif
+    #if GET_JOY_ADC_Z() == 0
+      JOY_Z_PIN,
+    #endif
+    #if GET_POWERMON_ADC_CURRENT() == 0
+      POWER_MONITOR_CURRENT_PIN,
+    #endif
+    #if GET_POWERMON_ADC_VOLTS() == 0
+      POWER_MONITOR_VOLTAGE_PIN,
+    #endif
+
+    // Pins for ADC1 after ADC0
+
+    #if GET_TEMP_0_ADC() == 1
+      TEMP_0_PIN,
+    #endif
+    #if GET_TEMP_1_ADC() == 1
+      TEMP_1_PIN,
+    #endif
+    #if GET_TEMP_2_ADC() == 1
+      TEMP_2_PIN,
+    #endif
+    #if GET_TEMP_3_ADC() == 1
+      TEMP_3_PIN,
+    #endif
+    #if GET_TEMP_4_ADC() == 1
+      TEMP_4_PIN,
+    #endif
+    #if GET_TEMP_5_ADC() == 1
+      TEMP_5_PIN,
+    #endif
+    #if GET_TEMP_6_ADC() == 1
+      TEMP_6_PIN,
+    #endif
+    #if GET_TEMP_7_ADC() == 1
+      TEMP_7_PIN,
+    #endif
+    #if GET_BED_ADC() == 1
+      TEMP_BED_PIN,
+    #endif
+    #if GET_CHAMBER_ADC() == 1
+      TEMP_CHAMBER_PIN,
+    #endif
+    #if GET_PROBE_ADC() == 1
+      TEMP_PROBE_PIN,
+    #endif
+    #if GET_COOLER_ADC() == 1
+      TEMP_COOLER_PIN,
+    #endif
+    #if GET_BOARD_ADC() == 1
+      TEMP_BOARD_PIN,
+    #endif
+    #if GET_FILAMENT_WIDTH_ADC() == 1
+      FILWIDTH_PIN,
+    #endif
+    #if GET_BUTTONS_ADC() == 1
+      ADC_KEYPAD_PIN,
+    #endif
+    #if GET_JOY_ADC_X() == 1
+      JOY_X_PIN,
+    #endif
+    #if GET_JOY_ADC_Y() == 1
+      JOY_Y_PIN,
+    #endif
+    #if GET_JOY_ADC_Z() == 1
+      JOY_Z_PIN,
+    #endif
+    #if GET_POWERMON_ADC_CURRENT() == 1
+      POWER_MONITOR_CURRENT_PIN,
+    #endif
+    #if GET_POWERMON_ADC_VOLTS() == 1
+      POWER_MONITOR_VOLTAGE_PIN,
+    #endif
+  };
+
+  static uint16_t adc_results[ADC_COUNT];
+
+  #if ADC0_IS_REQUIRED
+    Adafruit_ZeroDMA adc0DMAProgram, adc0DMARead;
+
+    static constexpr HAL_DMA_DAC_Registers adc0_dma_regs_list[ADC_COUNT] = {
+      #if GET_TEMP_0_ADC() == 0
+        { PIN_TO_INPUTCTRL(TEMP_0_PIN) },
+      #endif
+      #if GET_TEMP_1_ADC() == 0
+        { PIN_TO_INPUTCTRL(TEMP_1_PIN) },
+      #endif
+      #if GET_TEMP_2_ADC() == 0
+        { PIN_TO_INPUTCTRL(TEMP_2_PIN) },
+      #endif
+      #if GET_TEMP_3_ADC() == 0
+        { PIN_TO_INPUTCTRL(TEMP_3_PIN) },
+      #endif
+      #if GET_TEMP_4_ADC() == 0
+        { PIN_TO_INPUTCTRL(TEMP_4_PIN) },
+      #endif
+      #if GET_TEMP_5_ADC() == 0
+        { PIN_TO_INPUTCTRL(TEMP_5_PIN) },
+      #endif
+      #if GET_TEMP_6_ADC() == 0
+        { PIN_TO_INPUTCTRL(TEMP_6_PIN) },
+      #endif
+      #if GET_TEMP_7_ADC() == 0
+        { PIN_TO_INPUTCTRL(TEMP_7_PIN) },
+      #endif
+      #if GET_BED_ADC() == 0
+        { PIN_TO_INPUTCTRL(TEMP_BED_PIN) },
+      #endif
+      #if GET_CHAMBER_ADC() == 0
+        { PIN_TO_INPUTCTRL(TEMP_CHAMBER_PIN) },
+      #endif
+      #if GET_PROBE_ADC() == 0
+        { PIN_TO_INPUTCTRL(TEMP_PROBE_PIN) },
+      #endif
+      #if GET_COOLER_ADC() == 0
+        { PIN_TO_INPUTCTRL(TEMP_COOLER_PIN) },
+      #endif
+      #if GET_BOARD_ADC() == 0
+        { PIN_TO_INPUTCTRL(TEMP_BOARD_PIN) },
+      #endif
+      #if GET_FILAMENT_WIDTH_ADC() == 0
+        { PIN_TO_INPUTCTRL(FILWIDTH_PIN) },
+      #endif
+      #if GET_BUTTONS_ADC() == 0
+        { PIN_TO_INPUTCTRL(ADC_KEYPAD_PIN) },
+      #endif
+      #if GET_JOY_ADC_X() == 0
+        { PIN_TO_INPUTCTRL(JOY_X_PIN) },
+      #endif
+      #if GET_JOY_ADC_Y() == 0
+        { PIN_TO_INPUTCTRL(JOY_Y_PIN) },
+      #endif
+      #if GET_JOY_ADC_Z() == 0
+        { PIN_TO_INPUTCTRL(JOY_Z_PIN) },
+      #endif
+      #if GET_POWERMON_ADC_CURRENT() == 0
+        { PIN_TO_INPUTCTRL(POWER_MONITOR_CURRENT_PIN) },
+      #endif
+      #if GET_POWERMON_ADC_VOLTS() == 0
+        { PIN_TO_INPUTCTRL(POWER_MONITOR_VOLTAGE_PIN) },
+      #endif
+    };
+
+    #define ADC0_AINCOUNT   COUNT(adc0_dma_regs_list)
+  #endif // ADC0_IS_REQUIRED
+
+  #if ADC1_IS_REQUIRED
+    Adafruit_ZeroDMA adc1DMAProgram, adc1DMARead;
+
+    static constexpr HAL_DMA_DAC_Registers adc1_dma_regs_list[ADC_COUNT] = {
+      #if GET_TEMP_0_ADC() == 1
+        { PIN_TO_INPUTCTRL(TEMP_0_PIN) },
+      #endif
+      #if GET_TEMP_1_ADC() == 1
+        { PIN_TO_INPUTCTRL(TEMP_1_PIN) },
+      #endif
+      #if GET_TEMP_2_ADC() == 1
+        { PIN_TO_INPUTCTRL(TEMP_2_PIN) },
+      #endif
+      #if GET_TEMP_3_ADC() == 1
+        { PIN_TO_INPUTCTRL(TEMP_3_PIN) },
+      #endif
+      #if GET_TEMP_4_ADC() == 1
+        { PIN_TO_INPUTCTRL(TEMP_4_PIN) },
+      #endif
+      #if GET_TEMP_5_ADC() == 1
+        { PIN_TO_INPUTCTRL(TEMP_5_PIN) },
+      #endif
+      #if GET_TEMP_6_ADC() == 1
+        { PIN_TO_INPUTCTRL(TEMP_6_PIN) },
+      #endif
+      #if GET_TEMP_7_ADC() == 1
+        { PIN_TO_INPUTCTRL(TEMP_7_PIN) },
+      #endif
+      #if GET_BED_ADC() == 1
+        { PIN_TO_INPUTCTRL(TEMP_BED_PIN) },
+      #endif
+      #if GET_CHAMBER_ADC() == 1
+        { PIN_TO_INPUTCTRL(TEMP_CHAMBER_PIN) },
+      #endif
+      #if GET_PROBE_ADC() == 1
+        { PIN_TO_INPUTCTRL(TEMP_PROBE_PIN) },
+      #endif
+      #if GET_COOLER_ADC() == 1
+        { PIN_TO_INPUTCTRL(TEMP_COOLER_PIN) },
+      #endif
+      #if GET_BOARD_ADC() == 1
+        { PIN_TO_INPUTCTRL(TEMP_BOARD_PIN) },
+      #endif
+      #if GET_FILAMENT_WIDTH_ADC() == 1
+        { PIN_TO_INPUTCTRL(FILWIDTH_PIN) },
+      #endif
+      #if GET_BUTTONS_ADC() == 1
+        { PIN_TO_INPUTCTRL(ADC_KEYPAD_PIN) },
+      #endif
+      #if GET_JOY_ADC_X() == 1
+        { PIN_TO_INPUTCTRL(JOY_X_PIN) },
+      #endif
+      #if GET_JOY_ADC_Y() == 1
+        { PIN_TO_INPUTCTRL(JOY_Y_PIN) },
+      #endif
+      #if GET_JOY_ADC_Z() == 1
+        { PIN_TO_INPUTCTRL(JOY_Z_PIN) },
+      #endif
+      #if GET_POWERMON_ADC_CURRENT() == 1
+        { PIN_TO_INPUTCTRL(POWER_MONITOR_CURRENT_PIN) },
+      #endif
+      #if GET_POWERMON_ADC_VOLTS() == 1
+        { PIN_TO_INPUTCTRL(POWER_MONITOR_VOLTAGE_PIN) },
+      #endif
+    };
+
+    #define ADC1_AINCOUNT   COUNT(adc1_dma_regs_list)
+  #endif // ADC1_IS_REQUIRED
+
+#endif // ADC_IS_REQUIRED
+
+// ------------------------
+// Private functions
+// ------------------------
+
+void MarlinHAL::dma_init() {
+
+  #if DMA_IS_REQUIRED
+
+    DmacDescriptor *descriptor;
+
+    #if ADC0_IS_REQUIRED
+      adc0DMAProgram.setTrigger(ADC0_DMAC_ID_SEQ);
+      adc0DMAProgram.setAction(DMA_TRIGGER_ACTON_BEAT);
+      adc0DMAProgram.loop(true);
+      if (adc0DMAProgram.allocate() == DMA_STATUS_OK) {
+        descriptor = adc0DMAProgram.addDescriptor(
+          (void *)adc0_dma_regs_list,         // SRC
+          (void *)&ADC0->DSEQDATA.reg,        // DEST
+          sizeof(adc0_dma_regs_list) / 4,     // CNT
+          DMA_BEAT_SIZE_WORD,
+          true,                               // SRCINC
+          false,                              // DSTINC
+          DMA_ADDRESS_INCREMENT_STEP_SIZE_1,  // STEPSIZE
+          DMA_STEPSEL_SRC                     // STEPSEL
+        );
+        if (descriptor)
+          descriptor->BTCTRL.bit.EVOSEL = DMA_EVENT_OUTPUT_BEAT;
+        adc0DMAProgram.startJob();
+      }
+
+      adc0DMARead.setTrigger(ADC0_DMAC_ID_RESRDY);
+      adc0DMARead.setAction(DMA_TRIGGER_ACTON_BEAT);
+      adc0DMARead.loop(true);
+      if (adc0DMARead.allocate() == DMA_STATUS_OK) {
+        adc0DMARead.addDescriptor(
+          (void *)&ADC0->RESULT.reg,          // SRC
+          &adc_results,                       // DEST
+          ADC0_AINCOUNT,                      // CNT
+          DMA_BEAT_SIZE_HWORD,
+          false,                              // SRCINC
+          true,                               // DSTINC
+          DMA_ADDRESS_INCREMENT_STEP_SIZE_1,  // STEPSIZE
+          DMA_STEPSEL_DST                     // STEPSEL
+        );
+        adc0DMARead.startJob();
+      }
+    #endif
+    #if ADC1_IS_REQUIRED
+      adc1DMAProgram.setTrigger(ADC1_DMAC_ID_SEQ);
+      adc1DMAProgram.setAction(DMA_TRIGGER_ACTON_BEAT);
+      adc1DMAProgram.loop(true);
+      if (adc1DMAProgram.allocate() == DMA_STATUS_OK) {
+        descriptor = adc1DMAProgram.addDescriptor(
+          (void *)adc1_dma_regs_list,         // SRC
+          (void *)&ADC1->DSEQDATA.reg,        // DEST
+          sizeof(adc1_dma_regs_list) / 4,     // CNT
+          DMA_BEAT_SIZE_WORD,
+          true,                               // SRCINC
+          false,                              // DSTINC
+          DMA_ADDRESS_INCREMENT_STEP_SIZE_1,  // STEPSIZE
+          DMA_STEPSEL_SRC                     // STEPSEL
+        );
+        if (descriptor)
+          descriptor->BTCTRL.bit.EVOSEL = DMA_EVENT_OUTPUT_BEAT;
+        adc1DMAProgram.startJob();
+      }
+
+      adc1DMARead.setTrigger(ADC1_DMAC_ID_RESRDY);
+      adc1DMARead.setAction(DMA_TRIGGER_ACTON_BEAT);
+      adc1DMARead.loop(true);
+      if (adc1DMARead.allocate() == DMA_STATUS_OK) {
+        adc1DMARead.addDescriptor(
+          (void *)&ADC1->RESULT.reg,          // SRC
+          &adc_results[ADC0_AINCOUNT],        // DEST
+          ADC1_AINCOUNT,                      // CNT
+          DMA_BEAT_SIZE_HWORD,
+          false,                              // SRCINC
+          true,                               // DSTINC
+          DMA_ADDRESS_INCREMENT_STEP_SIZE_1,  // STEPSIZE
+          DMA_STEPSEL_DST                     // STEPSEL
+        );
+        adc1DMARead.startJob();
+      }
+    #endif
+
+    DMAC->PRICTRL0.bit.RRLVLEN0 = true;                         // Activate round robin for DMA channels required by ADCs
+
+  #endif // DMA_IS_REQUIRED
 }
 
-#endif // TARGET_LPC1768
+// ------------------------
+// Public functions
+// ------------------------
+
+// HAL initialization task
+void MarlinHAL::init() {
+  TERN_(DMA_IS_REQUIRED, dma_init());
+  #if HAS_MEDIA
+    #if HAS_SD_DETECT && SD_CONNECTION_IS(ONBOARD)
+      SET_INPUT_PULLUP(SD_DETECT_PIN);
+    #endif
+    OUT_WRITE(SDSS, HIGH);  // Try to set SDSS inactive before any other SPI users start up
+  #endif
+}
+
+#pragma push_macro("WDT")
+#undef WDT    // Required to be able to use '.bit.WDT'. Compiler wrongly replace struct field with WDT define
+uint8_t MarlinHAL::get_reset_source() {
+  RSTC_RCAUSE_Type resetCause;
+
+  resetCause.reg = REG_RSTC_RCAUSE;
+  if (resetCause.bit.POR)                                   return RST_POWER_ON;
+  else if (resetCause.bit.EXT)                              return RST_EXTERNAL;
+  else if (resetCause.bit.BODCORE || resetCause.bit.BODVDD) return RST_BROWN_OUT;
+  else if (resetCause.bit.WDT)                              return RST_WATCHDOG;
+  else if (resetCause.bit.SYST || resetCause.bit.NVM)       return RST_SOFTWARE;
+  else if (resetCause.bit.BACKUP)                           return RST_BACKUP;
+  return 0;
+}
+#pragma pop_macro("WDT")
+
+void MarlinHAL::reboot() { NVIC_SystemReset(); }
+
+extern "C" {
+  void * _sbrk(int incr);
+
+  extern unsigned int __bss_end__; // end of bss section
+}
+
+// Return free memory between end of heap (or end bss) and whatever is current
+int freeMemory() {
+  int free_memory, heap_end = (int)_sbrk(0);
+  return (int)&free_memory - (heap_end ?: (int)&__bss_end__);
+}
+
+// ------------------------
+// ADC
+// ------------------------
+
+uint16_t MarlinHAL::adc_result;
+
+void MarlinHAL::adc_init() {
+  #if ADC_IS_REQUIRED
+    memset(adc_results, 0xFF, sizeof(adc_results));                         // Fill result with invalid values
+
+    for (uint8_t pi = 0; pi < COUNT(adc_pins); ++pi)
+      pinPeripheral(adc_pins[pi], PIO_ANALOG);
+
+    for (uint8_t ai = FIRST_ADC; ai <= LAST_ADC; ++ai) {
+      Adc* adc = ((Adc*[])ADC_INSTS)[ai];
+
+      // ADC clock setup
+      GCLK->PCHCTRL[ADC0_GCLK_ID + ai].bit.CHEN = false;
+      SYNC(GCLK->PCHCTRL[ADC0_GCLK_ID + ai].bit.CHEN);
+      GCLK->PCHCTRL[ADC0_GCLK_ID + ai].reg = GCLK_PCHCTRL_GEN_GCLK1 | GCLK_PCHCTRL_CHEN;   // 48MHz startup code programmed
+      SYNC(!GCLK->PCHCTRL[ADC0_GCLK_ID + ai].bit.CHEN);
+      adc->CTRLA.bit.PRESCALER = ADC_CTRLA_PRESCALER_DIV32_Val;             // 1.5MHZ adc clock
+
+      // ADC setup
+      // Preloaded data (fixed for all ADC instances hence not loaded by DMA)
+      adc->REFCTRL.bit.REFSEL = ADC_REFCTRL_REFSEL_AREFA_Val;               // VRefA pin
+      SYNC(adc->SYNCBUSY.bit.REFCTRL);
+      adc->CTRLB.bit.RESSEL = ADC_CTRLB_RESSEL_10BIT_Val;                   // ... ADC_CTRLB_RESSEL_16BIT_Val
+      SYNC(adc->SYNCBUSY.bit.CTRLB);
+      adc->SAMPCTRL.bit.SAMPLEN = (6 - 1);                                  // Sampling clocks
+      //adc->AVGCTRL.reg = ADC_AVGCTRL_SAMPLENUM_16 | ADC_AVGCTRL_ADJRES(4);  // 16 Accumulated conversions and shift 4 to get oversampled 12 bits result
+      //SYNC(adc->SYNCBUSY.bit.AVGCTRL);
+
+      // Registers loaded by DMA
+      adc->DSEQCTRL.bit.INPUTCTRL = true;
+      adc->DSEQCTRL.bit.AUTOSTART = true;                                   // Start conversion after DMA sequence
+
+      adc->CTRLA.bit.ENABLE = true;                                         // Enable ADC
+      SYNC(adc->SYNCBUSY.bit.ENABLE);
+    }
+  #endif // ADC_IS_REQUIRED
+}
+
+void MarlinHAL::adc_start(const pin_t pin) {
+  #if ADC_IS_REQUIRED
+    for (uint8_t pi = 0; pi < COUNT(adc_pins); ++pi)
+      if (pin == adc_pins[pi]) { adc_result = adc_results[pi]; return; }
+  #endif
+
+  adc_result = 0xFFFF;
+}
+
+#endif // __SAMD51__

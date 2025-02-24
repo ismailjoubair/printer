@@ -22,6 +22,21 @@
 #pragma once
 
 /**
+ * SAMD51 HAL developed by Giuliano Zaro (AKA GMagician)
+ */
+
+/**
+ * Endstop interrupts for ATMEL SAMD51 based targets.
+ *
+ * On SAMD51, all pins support external interrupt capability.
+ * Any pin can be used for external interrupts, but there are some restrictions.
+ * At most 16 different external interrupts can be used at one time.
+ * Further, you can’t just pick any 16 pins to use. This is because every pin on the SAMD51
+ * connects to what is called an EXTINT line, and only one pin per EXTINT line can be used for external
+ * interrupts at a time
+ */
+
+/**
  * Endstop Interrupts
  *
  * Without endstop interrupts the endstop pins must be polled continually in
@@ -37,179 +52,207 @@
 
 #include "../../module/endstops.h"
 
+#define MATCH_EILINE(P1,P2) (P1 != P2 && PIN_TO_EILINE(P1) == PIN_TO_EILINE(P2))
+#define MATCH_X_MAX_EILINE(P)   TERN0(USE_X_MAX,  DEFER4(MATCH_EILINE)(P, X_MAX_PIN))
+#define MATCH_X_MIN_EILINE(P)   TERN0(USE_X_MIN,  DEFER4(MATCH_EILINE)(P, X_MIN_PIN))
+#define MATCH_Y_MAX_EILINE(P)   TERN0(USE_Y_MAX,  DEFER4(MATCH_EILINE)(P, Y_MAX_PIN))
+#define MATCH_Y_MIN_EILINE(P)   TERN0(USE_Y_MIN,  DEFER4(MATCH_EILINE)(P, Y_MIN_PIN))
+#define MATCH_Z_MAX_EILINE(P)   TERN0(USE_Z_MAX,  DEFER4(MATCH_EILINE)(P, Z_MAX_PIN))
+#define MATCH_Z_MIN_EILINE(P)   TERN0(USE_Z_MIN,  DEFER4(MATCH_EILINE)(P, Z_MIN_PIN))
+#define MATCH_I_MAX_EILINE(P)   TERN0(USE_I_MAX,  DEFER4(MATCH_EILINE)(P, I_MAX_PIN))
+#define MATCH_I_MIN_EILINE(P)   TERN0(USE_I_MIN,  DEFER4(MATCH_EILINE)(P, I_MIN_PIN))
+#define MATCH_J_MAX_EILINE(P)   TERN0(USE_J_MAX,  DEFER4(MATCH_EILINE)(P, J_MAX_PIN))
+#define MATCH_J_MIN_EILINE(P)   TERN0(USE_J_MIN,  DEFER4(MATCH_EILINE)(P, J_MIN_PIN))
+#define MATCH_K_MAX_EILINE(P)   TERN0(USE_K_MAX,  DEFER4(MATCH_EILINE)(P, K_MAX_PIN))
+#define MATCH_K_MIN_EILINE(P)   TERN0(USE_K_MIN,  DEFER4(MATCH_EILINE)(P, K_MIN_PIN))
+#define MATCH_U_MAX_EILINE(P)   TERN0(USE_U_MAX,  DEFER4(MATCH_EILINE)(P, U_MAX_PIN))
+#define MATCH_U_MIN_EILINE(P)   TERN0(USE_U_MIN,  DEFER4(MATCH_EILINE)(P, U_MIN_PIN))
+#define MATCH_V_MAX_EILINE(P)   TERN0(USE_V_MAX,  DEFER4(MATCH_EILINE)(P, V_MAX_PIN))
+#define MATCH_V_MIN_EILINE(P)   TERN0(USE_V_MIN,  DEFER4(MATCH_EILINE)(P, V_MIN_PIN))
+#define MATCH_W_MAX_EILINE(P)   TERN0(USE_W_MAX,  DEFER4(MATCH_EILINE)(P, W_MAX_PIN))
+#define MATCH_W_MIN_EILINE(P)   TERN0(USE_W_MIN,  DEFER4(MATCH_EILINE)(P, W_MIN_PIN))
+#define MATCH_X2_MAX_EILINE(P)  TERN0(USE_X2_MAX, DEFER4(MATCH_EILINE)(P, X2_MAX_PIN))
+#define MATCH_X2_MIN_EILINE(P)  TERN0(USE_X2_MIN, DEFER4(MATCH_EILINE)(P, X2_MIN_PIN))
+#define MATCH_Y2_MAX_EILINE(P)  TERN0(USE_Y2_MAX, DEFER4(MATCH_EILINE)(P, Y2_MAX_PIN))
+#define MATCH_Y2_MIN_EILINE(P)  TERN0(USE_Y2_MIN, DEFER4(MATCH_EILINE)(P, Y2_MIN_PIN))
+#define MATCH_Z2_MAX_EILINE(P)  TERN0(USE_Z2_MAX, DEFER4(MATCH_EILINE)(P, Z2_MAX_PIN))
+#define MATCH_Z2_MIN_EILINE(P)  TERN0(USE_Z2_MIN, DEFER4(MATCH_EILINE)(P, Z2_MIN_PIN))
+#define MATCH_Z3_MAX_EILINE(P)  TERN0(USE_Z3_MAX, DEFER4(MATCH_EILINE)(P, Z3_MAX_PIN))
+#define MATCH_Z3_MIN_EILINE(P)  TERN0(USE_Z3_MIN, DEFER4(MATCH_EILINE)(P, Z3_MIN_PIN))
+#define MATCH_Z4_MAX_EILINE(P)  TERN0(USE_Z4_MAX, DEFER4(MATCH_EILINE)(P, Z4_MAX_PIN))
+#define MATCH_Z4_MIN_EILINE(P)  TERN0(USE_Z4_MIN, DEFER4(MATCH_EILINE)(P, Z4_MIN_PIN))
+#define MATCH_Z_MIN_PROBE_EILINE(P) TERN0(HAS_Z_MIN_PROBE+PIN, DEFER4(MATCH_EILINE)(P, Z_MIN_PROBE_PIN))
+
+#define AVAILABLE_EILINE(P) ( PIN_TO_EILINE(P) != -1    \
+  && !MATCH_X_MAX_EILINE(P) && !MATCH_X_MIN_EILINE(P)   \
+  && !MATCH_Y_MAX_EILINE(P) && !MATCH_Y_MIN_EILINE(P)   \
+  && !MATCH_Z_MAX_EILINE(P) && !MATCH_Z_MIN_EILINE(P)   \
+  && !MATCH_I_MAX_EILINE(P) && !MATCH_I_MIN_EILINE(P)   \
+  && !MATCH_J_MAX_EILINE(P) && !MATCH_J_MIN_EILINE(P)   \
+  && !MATCH_K_MAX_EILINE(P) && !MATCH_K_MIN_EILINE(P)   \
+  && !MATCH_U_MAX_EILINE(P) && !MATCH_U_MIN_EILINE(P)   \
+  && !MATCH_V_MAX_EILINE(P) && !MATCH_V_MIN_EILINE(P)   \
+  && !MATCH_W_MAX_EILINE(P) && !MATCH_W_MIN_EILINE(P)   \
+  && !MATCH_X2_MAX_EILINE(P) && !MATCH_X2_MIN_EILINE(P) \
+  && !MATCH_Y2_MAX_EILINE(P) && !MATCH_Y2_MIN_EILINE(P) \
+  && !MATCH_Z2_MAX_EILINE(P) && !MATCH_Z2_MIN_EILINE(P) \
+  && !MATCH_Z3_MAX_EILINE(P) && !MATCH_Z3_MIN_EILINE(P) \
+  && !MATCH_Z4_MAX_EILINE(P) && !MATCH_Z4_MIN_EILINE(P) \
+  && !MATCH_Z_MIN_PROBE_EILINE(P) )
+
 // One ISR for all EXT-Interrupts
 void endstop_ISR() { endstops.update(); }
 
 void setup_endstop_interrupts() {
-  #define _ATTACH(P) attachInterrupt(digitalPinToInterrupt(P), endstop_ISR, CHANGE)
-  #define LPC1768_PIN_INTERRUPT_M(pin) ((pin >> 0x5 & 0x7) == 0 || (pin >> 0x5 & 0x7) == 2)
-
+  #define _ATTACH(P) attachInterrupt(P, endstop_ISR, CHANGE)
   #if USE_X_MAX
-    #if !LPC1768_PIN_INTERRUPT_M(X_MAX_PIN)
-      #error "X_MAX_PIN is not INTERRUPT-capable. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
+    #if !AVAILABLE_EILINE(X_MAX_PIN)
+      #error "X_MAX_PIN has no EXTINT line available. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
     #endif
     _ATTACH(X_MAX_PIN);
   #endif
   #if USE_X_MIN
-    #if !LPC1768_PIN_INTERRUPT_M(X_MIN_PIN)
-      #error "X_MIN_PIN is not INTERRUPT-capable. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
+    #if !AVAILABLE_EILINE(X_MIN_PIN)
+      #error "X_MIN_PIN has no EXTINT line available. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
     #endif
     _ATTACH(X_MIN_PIN);
   #endif
   #if USE_Y_MAX
-    #if !LPC1768_PIN_INTERRUPT_M(Y_MAX_PIN)
-      #error "Y_MAX_PIN is not INTERRUPT-capable. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
+    #if !AVAILABLE_EILINE(Y_MAX_PIN)
+      #error "Y_MAX_PIN has no EXTINT line available. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
     #endif
     _ATTACH(Y_MAX_PIN);
   #endif
   #if USE_Y_MIN
-    #if !LPC1768_PIN_INTERRUPT_M(Y_MIN_PIN)
-      #error "Y_MIN_PIN is not INTERRUPT-capable. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
+    #if !AVAILABLE_EILINE(Y_MIN_PIN)
+      #error "Y_MIN_PIN has no EXTINT line available. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
     #endif
     _ATTACH(Y_MIN_PIN);
   #endif
   #if USE_Z_MAX
-    #if !LPC1768_PIN_INTERRUPT_M(Z_MAX_PIN)
-      #error "Z_MAX_PIN is not INTERRUPT-capable. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
+    #if !AVAILABLE_EILINE(Z_MAX_PIN)
+      #error "Z_MAX_PIN has no EXTINT line available. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
     #endif
     _ATTACH(Z_MAX_PIN);
   #endif
   #if USE_Z_MIN
-    #if !LPC1768_PIN_INTERRUPT_M(Z_MIN_PIN)
-      #error "Z_MIN_PIN is not INTERRUPT-capable. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
+    #if !AVAILABLE_EILINE(Z_MIN_PIN)
+      #error "Z_MIN_PIN has no EXTINT line available. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
     #endif
-     _ATTACH(Z_MIN_PIN);
-  #endif
-  #if USE_X2_MAX
-    #if !LPC1768_PIN_INTERRUPT_M(X2_MAX_PIN)
-      #error "X2_MAX_PIN is not INTERRUPT-capable. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
-    #endif
-    _ATTACH(X2_MAX_PIN);
-  #endif
-  #if USE_X2_MIN
-    #if !LPC1768_PIN_INTERRUPT_M(X2_MIN_PIN)
-      #error "X2_MIN_PIN is not INTERRUPT-capable. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
-    #endif
-    _ATTACH(X2_MIN_PIN);
-  #endif
-  #if USE_Y2_MAX
-    #if !LPC1768_PIN_INTERRUPT_M(Y2_MAX_PIN)
-      #error "Y2_MAX_PIN is not INTERRUPT-capable. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
-    #endif
-    _ATTACH(Y2_MAX_PIN);
-  #endif
-  #if USE_Y2_MIN
-    #if !LPC1768_PIN_INTERRUPT_M(Y2_MIN_PIN)
-      #error "Y2_MIN_PIN is not INTERRUPT-capable. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
-    #endif
-    _ATTACH(Y2_MIN_PIN);
+    _ATTACH(Z_MIN_PIN);
   #endif
   #if USE_Z2_MAX
-    #if !LPC1768_PIN_INTERRUPT_M(Z2_MAX_PIN)
-      #error "Z2_MAX_PIN is not INTERRUPT-capable. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
+    #if !AVAILABLE_EILINE(Z2_MAX_PIN)
+      #error "Z2_MAX_PIN has no EXTINT line available. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
     #endif
     _ATTACH(Z2_MAX_PIN);
   #endif
   #if USE_Z2_MIN
-    #if !LPC1768_PIN_INTERRUPT_M(Z2_MIN_PIN)
-      #error "Z2_MIN_PIN is not INTERRUPT-capable. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
+    #if !AVAILABLE_EILINE(Z2_MIN_PIN)
+      #error "Z2_MIN_PIN has no EXTINT line available. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
     #endif
     _ATTACH(Z2_MIN_PIN);
   #endif
   #if USE_Z3_MAX
-    #if !LPC1768_PIN_INTERRUPT_M(Z3_MAX_PIN)
-      #error "Z3_MIN_PIN is not INTERRUPT-capable. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
+    #if !AVAILABLE_EILINE(Z3_MAX_PIN)
+      #error "Z3_MAX_PIN has no EXTINT line available. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
     #endif
     _ATTACH(Z3_MAX_PIN);
   #endif
   #if USE_Z3_MIN
-    #if !LPC1768_PIN_INTERRUPT_M(Z3_MIN_PIN)
-      #error "Z3_MIN_PIN is not INTERRUPT-capable. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
+    #if !AVAILABLE_EILINE(Z3_MIN_PIN)
+      #error "Z3_MIN_PIN has no EXTINT line available. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
     #endif
     _ATTACH(Z3_MIN_PIN);
   #endif
   #if USE_Z4_MAX
-    #if !LPC1768_PIN_INTERRUPT_M(Z4_MAX_PIN)
-      #error "Z4_MIN_PIN is not INTERRUPT-capable. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
+    #if !AVAILABLE_EILINE(Z4_MAX_PIN)
+      #error "Z4_MAX_PIN has no EXTINT line available. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
     #endif
     _ATTACH(Z4_MAX_PIN);
   #endif
   #if USE_Z4_MIN
-    #if !LPC1768_PIN_INTERRUPT_M(Z4_MIN_PIN)
-      #error "Z4_MIN_PIN is not INTERRUPT-capable. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
+    #if !AVAILABLE_EILINE(Z4_MIN_PIN)
+      #error "Z4_MIN_PIN has no EXTINT line available. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
     #endif
     _ATTACH(Z4_MIN_PIN);
   #endif
   #if HAS_Z_MIN_PROBE_PIN
-    #if !LPC1768_PIN_INTERRUPT_M(Z_MIN_PROBE_PIN)
-      #error "Z_MIN_PROBE_PIN is not INTERRUPT-capable. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
+    #if !AVAILABLE_EILINE(Z_MIN_PROBE_PIN)
+      #error "Z_MIN_PROBE_PIN has no EXTINT line available. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
     #endif
     _ATTACH(Z_MIN_PROBE_PIN);
   #endif
   #if USE_I_MAX
-    #if !LPC1768_PIN_INTERRUPT_M(I_MAX_PIN)
-      #error "I_MAX_PIN is not INTERRUPT-capable. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
+    #if !AVAILABLE_EILINE(I_MAX_PIN)
+      #error "I_MAX_PIN has no EXTINT line available. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
     #endif
-    _ATTACH(I_MAX_PIN);
-  #elif USE_I_MIN
-    #if !LPC1768_PIN_INTERRUPT_M(I_MIN_PIN)
-      #error "I_MIN_PIN is not INTERRUPT-capable. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
+    attachInterrupt(I_MAX_PIN, endstop_ISR, CHANGE);
+  #endif
+  #if USE_I_MIN
+    #if !AVAILABLE_EILINE(I_MIN_PIN)
+      #error "I_MIN_PIN has no EXTINT line available. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
     #endif
-    _ATTACH(I_MIN_PIN);
+    attachInterrupt(I_MIN_PIN, endstop_ISR, CHANGE);
   #endif
   #if USE_J_MAX
-    #if !LPC1768_PIN_INTERRUPT_M(J_MAX_PIN)
-      #error "J_MAX_PIN is not INTERRUPT-capable. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
+    #if !AVAILABLE_EILINE(J_MAX_PIN)
+      #error "J_MAX_PIN has no EXTINT line available. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
     #endif
-    _ATTACH(J_MAX_PIN);
-  #elif USE_J_MIN
-    #if !LPC1768_PIN_INTERRUPT_M(J_MIN_PIN)
-      #error "J_MIN_PIN is not INTERRUPT-capable. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
+    attachInterrupt(J_MAX_PIN, endstop_ISR, CHANGE);
+  #endif
+  #if USE_J_MIN
+    #if !AVAILABLE_EILINE(J_MIN_PIN)
+      #error "J_MIN_PIN has no EXTINT line available. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
     #endif
-    _ATTACH(J_MIN_PIN);
+    attachInterrupt(J_MIN_PIN, endstop_ISR, CHANGE);
   #endif
   #if USE_K_MAX
-    #if !LPC1768_PIN_INTERRUPT_M(K_MAX_PIN)
-      #error "K_MAX_PIN is not INTERRUPT-capable. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
+    #if !AVAILABLE_EILINE(K_MAX_PIN)
+      #error "K_MAX_PIN has no EXTINT line available. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
     #endif
-    _ATTACH(K_MAX_PIN);
-  #elif USE_K_MIN
-    #if !LPC1768_PIN_INTERRUPT_M(K_MIN_PIN)
-      #error "K_MIN_PIN is not INTERRUPT-capable. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
+    attachInterrupt(K_MAX_PIN, endstop_ISR, CHANGE);
+  #endif
+  #if USE_K_MIN
+    #if !AVAILABLE_EILINE(K_MIN_PIN)
+      #error "K_MIN_PIN has no EXTINT line available. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
     #endif
-    _ATTACH(K_MIN_PIN);
+    attachInterrupt(K_MIN_PIN, endstop_ISR, CHANGE);
   #endif
   #if USE_U_MAX
-    #if !LPC1768_PIN_INTERRUPT_M(U_MAX_PIN)
-      #error "U_MAX_PIN is not INTERRUPT-capable. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
+    #if !AVAILABLE_EILINE(U_MAX_PIN)
+      #error "U_MAX_PIN has no EXTINT line available. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
     #endif
-    _ATTACH(U_MAX_PIN);
-  #elif USE_U_MIN
-    #if !LPC1768_PIN_INTERRUPT_M(U_MIN_PIN)
-      #error "U_MIN_PIN is not INTERRUPT-capable. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
+    attachInterrupt(U_MAX_PIN, endstop_ISR, CHANGE);
+  #endif
+  #if USE_U_MIN
+    #if !AVAILABLE_EILINE(U_MIN_PIN)
+      #error "U_MIN_PIN has no EXTINT line available. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
     #endif
-    _ATTACH(U_MIN_PIN);
+    attachInterrupt(U_MIN_PIN, endstop_ISR, CHANGE);
   #endif
   #if USE_V_MAX
-    #if !LPC1768_PIN_INTERRUPT_M(V_MAX_PIN)
-      #error "V_MAX_PIN is not INTERRUPT-capable. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
+    #if !AVAILABLE_EILINE(V_MAX_PIN)
+      #error "V_MAX_PIN has no EXTINT line available. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
     #endif
-    _ATTACH(V_MAX_PIN);
-  #elif USE_V_MIN
-    #if !LPC1768_PIN_INTERRUPT_M(V_MIN_PIN)
-      #error "V_MIN_PIN is not INTERRUPT-capable. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
+    attachInterrupt(V_MAX_PIN, endstop_ISR, CHANGE);
+  #endif
+  #if USE_V_MIN
+    #if !AVAILABLE_EILINE(V_MIN_PIN)
+      #error "V_MIN_PIN has no EXTINT line available. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
     #endif
-    _ATTACH(V_MIN_PIN);
+    attachInterrupt(V_MIN_PIN, endstop_ISR, CHANGE);
   #endif
   #if USE_W_MAX
-    #if !LPC1768_PIN_INTERRUPT_M(W_MAX_PIN)
-      #error "W_MAX_PIN is not INTERRUPT-capable. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
+    #if !AVAILABLE_EILINE(W_MAX_PIN)
+      #error "W_MAX_PIN has no EXTINT line available. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
     #endif
-    _ATTACH(W_MAX_PIN);
-  #elif USE_W_MIN
-    #if !LPC1768_PIN_INTERRUPT_M(W_MIN_PIN)
-      #error "W_MIN_PIN is not INTERRUPT-capable. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
+    attachInterrupt(W_MAX_PIN, endstop_ISR, CHANGE);
+  #endif
+  #if USE_W_MIN
+    #if !AVAILABLE_EILINE(W_MIN_PIN)
+      #error "W_MIN_PIN has no EXTINT line available. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
     #endif
-    _ATTACH(W_MIN_PIN);
+    attachInterrupt(W_MIN_PIN, endstop_ISR, CHANGE);
   #endif
 }
