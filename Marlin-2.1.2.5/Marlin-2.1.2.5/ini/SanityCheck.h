@@ -21,95 +21,49 @@
  */
 #pragma once
 
-/**
- * Test AVR-specific configuration values for errors at compile-time.
- */
-
 #if HAS_SPI_TFT || HAS_FSMC_TFT
-  #error "Sorry! TFT displays are not available for HAL/AVR."
+  #error "Sorry! TFT displays are not available for HAL/ESP32."
 #endif
 
-/**
- * Check for common serial pin conflicts
- */
-#define CHECK_SERIAL_PIN(N) ( \
-     X_STOP_PIN == N || Y_STOP_PIN == N || Z_STOP_PIN  == N \
-  || X_MIN_PIN  == N || Y_MIN_PIN  == N || Z_MIN_PIN   == N \
-  || X_MAX_PIN  == N || Y_MAX_PIN  == N || Z_MAX_PIN   == N \
-  || X_STEP_PIN == N || Y_STEP_PIN == N || Z_STEP_PIN  == N \
-  || X_DIR_PIN  == N || Y_DIR_PIN  == N || Z_DIR_PIN   == N \
-  || X_ENA_PIN  == N || Y_ENA_PIN  == N || Z_ENA_PIN   == N \
-  || BTN_EN1    == N || BTN_EN2    == N || LCD_PINS_EN == N \
-)
-#if SERIAL_IN_USE(0)
-  // D0-D1. No known conflicts.
-#endif
-#if SERIAL_IN_USE(1)
-  #if NOT_TARGET(__AVR_ATmega644P__, __AVR_ATmega1284P__)
-    #if CHECK_SERIAL_PIN(18) || CHECK_SERIAL_PIN(19)
-      #error "Serial Port 1 pin D18 and/or D19 conflicts with another pin on the board."
-    #endif
-  #else
-    #if CHECK_SERIAL_PIN(10) || CHECK_SERIAL_PIN(11)
-      #error "Serial Port 1 pin D10 and/or D11 conflicts with another pin on the board."
-    #endif
-  #endif
-#endif
-#if SERIAL_IN_USE(2) && (CHECK_SERIAL_PIN(16) || CHECK_SERIAL_PIN(17))
-  #error "Serial Port 2 pin D16 and/or D17 conflicts with another pin on the board."
-#endif
-#if SERIAL_IN_USE(3) && (CHECK_SERIAL_PIN(14) || CHECK_SERIAL_PIN(15))
-  #error "Serial Port 3 pin D14 and/or D15 conflicts with another pin on the board."
-#endif
-#undef CHECK_SERIAL_PIN
-
-/**
- * Checks for FAST PWM
- */
-#if ALL(FAST_PWM_FAN, USE_OCR2A_AS_TOP, HAS_TCCR2)
-  #error "USE_OCR2A_AS_TOP does not apply to devices with a single output TIMER2."
+#if ENABLED(EMERGENCY_PARSER)
+  #error "EMERGENCY_PARSER is not yet implemented for ESP32. Disable EMERGENCY_PARSER to continue."
 #endif
 
-/**
- * Checks for SOFT PWM
- */
-#if HAS_FAN0 && FAN0_PIN == 9 && DISABLED(FAN_SOFT_PWM) && ENABLED(SPEAKER)
-  #error "FAN0_PIN 9 Hardware PWM uses Timer 2 which conflicts with Arduino AVR Tone Timer (for SPEAKER)."
-  #error "Disable SPEAKER or enable FAN_SOFT_PWM."
+#if ENABLED(SPINDLE_LASER_USE_PWM) && SPINDLE_LASER_FREQUENCY > 78125
+  #error "SPINDLE_LASER_FREQUENCY maximum value is 78125Hz for ESP32."
+#endif
+#if ENABLED(FAST_PWM_FAN) && FAST_PWM_FAN_FREQUENCY > 78125
+  #error "FAST_PWM_FREQUENCY maximum value is 78125Hz for ESP32."
 #endif
 
-/**
- * Sanity checks for Spindle / Laser PWM
- */
-#if ENABLED(SPINDLE_LASER_USE_PWM)
-  #include "../ServoTimers.h"   // Needed to check timer availability (_useTimer3)
-  #if SPINDLE_LASER_PWM_PIN == 4 || WITHIN(SPINDLE_LASER_PWM_PIN, 11, 13)
-    #error "Counter/Timer for SPINDLE_LASER_PWM_PIN is used by a system interrupt."
-  #elif NUM_SERVOS > 0 && defined(_useTimer3) && (WITHIN(SPINDLE_LASER_PWM_PIN, 2, 3) || SPINDLE_LASER_PWM_PIN == 5)
-    #error "Counter/Timer for SPINDLE_LASER_PWM_PIN is used by the servo system."
-  #endif
-#elif SPINDLE_LASER_FREQUENCY
-  #error "SPINDLE_LASER_FREQUENCY requires SPINDLE_LASER_USE_PWM."
+#if HAS_TMC_SW_SERIAL
+  #error "TMC220x Software Serial is not supported on ESP32."
 #endif
 
-/**
- * The Trinamic library includes SoftwareSerial.h, leading to a compile error.
- */
-#if ALL(HAS_TRINAMIC_CONFIG, ENDSTOP_INTERRUPTS_FEATURE)
-  #error "TMCStepper includes SoftwareSerial.h which is incompatible with ENDSTOP_INTERRUPTS_FEATURE. Disable ENDSTOP_INTERRUPTS_FEATURE to continue."
+#if ALL(WIFISUPPORT, ESP3D_WIFISUPPORT)
+  #error "Only enable one WiFi option, either WIFISUPPORT or ESP3D_WIFISUPPORT."
 #endif
 
-#if ALL(HAS_TMC_SW_SERIAL, MONITOR_DRIVER_STATUS)
-  #error "MONITOR_DRIVER_STATUS causes performance issues when used with SoftwareSerial-connected drivers. Disable MONITOR_DRIVER_STATUS or use hardware serial to continue."
-#endif
-
-/**
- * Postmortem debugging
- */
 #if ENABLED(POSTMORTEM_DEBUGGING)
-  #error "POSTMORTEM_DEBUGGING is not supported on AVR boards."
+  #error "POSTMORTEM_DEBUGGING is not yet supported on ESP32."
+#endif
+
+#if MB(MKS_TINYBEE) && ENABLED(FAST_PWM_FAN)
+  #error "FAST_PWM_FAN is not available on TinyBee."
+#endif
+
+#if ALL(I2S_STEPPER_STREAM, BABYSTEPPING) && DISABLED(INTEGRATED_BABYSTEPPING)
+  #error "BABYSTEPPING on I2S stream requires INTEGRATED_BABYSTEPPING."
 #endif
 
 #if USING_PULLDOWNS
-  #error "PULLDOWN pin mode is not available on AVR boards."
+  #error "PULLDOWN pin mode is not available on ESP32 boards."
+#endif
+
+#if ALL(I2S_STEPPER_STREAM, LIN_ADVANCE) && DISABLED(EXPERIMENTAL_I2S_LA)
+  #error "I2S stream is currently incompatible with LIN_ADVANCE."
+#endif
+
+#if ALL(I2S_STEPPER_STREAM, PRINTCOUNTER) && PRINTCOUNTER_SAVE_INTERVAL > 0 && DISABLED(PRINTCOUNTER_SYNC)
+  #error "PRINTCOUNTER_SAVE_INTERVAL may cause issues on ESP32 with an I2S expander. Define PRINTCOUNTER_SYNC in Configuration.h for an imperfect solution."
 #endif

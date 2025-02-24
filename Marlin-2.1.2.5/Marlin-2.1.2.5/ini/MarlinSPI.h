@@ -1,6 +1,6 @@
 /**
  * Marlin 3D Printer Firmware
- * Copyright (c) 2020 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
+ * Copyright (c) 2021 MarlinFirmware [https://github.com/MarlinFirmware/Marlin]
  *
  * Based on Sprinter and grbl.
  * Copyright (c) 2011 Camiel Gubbels / Erik van der Zalm
@@ -21,9 +21,6 @@
  */
 #pragma once
 
-//
-// Board-specific options need to be defined before HAL.h
-//
-#if MB(MKS_TINYBEE)
-  #define MAX_EXPANDER_BITS 24  // TinyBee has 3 x HC595
-#endif
+#include <SPI.h>
+
+using MarlinSPI = SPIClass;
