@@ -2,10 +2,10 @@
 *****************************************************************************
 **
 
-**  File        : lscript.ld
+**  File        : LinkerScript.ld
 **
-**  Abstract    : Linker script for STM32F407(VZ)(EG)Tx Device with
-**                512/1024KByte FLASH, 128KByte RAM
+**  Abstract    : Linker script for STM32F407ZGTx Device with
+**                1024KByte FLASH, 128KByte RAM
 **
 **                Set heap size, stack size and stack location according
 **                to application requirements.
@@ -60,9 +60,9 @@ _Min_Stack_Size = 0x400;; /* required amount of stack */
 /* Specify the memory areas */
 MEMORY
 {
+FLASH (rx)      : ORIGIN = 0x8008000, LENGTH = 1024K
 RAM (xrw)      : ORIGIN = 0x20000000, LENGTH = 128K
 CCMRAM (rw)      : ORIGIN = 0x10000000, LENGTH = 64K
-FLASH (rx)      : ORIGIN = 0x8008000, LENGTH = 1024K -32K
 }
 
 /* Define output sections */
@@ -148,11 +148,11 @@ SECTIONS
   _siccmram = LOADADDR(.ccmram);
 
   /* CCM-RAM section
-  *
-  * IMPORTANT NOTE!
-  * If initialized variables will be placed in this section,
-  * the startup code needs to be modified to copy the init-values.
-  */
+   *
+   * IMPORTANT NOTE!
+   * If initialized variables will be placed in this section,
+   * the startup code needs to be modified to copy the init-values.
+   */
   .ccmram :
   {
     . = ALIGN(4);
@@ -192,7 +192,6 @@ SECTIONS
     . = ALIGN(4);
   } >RAM
 
-
   /* Remove information from the standard libraries */
   /DISCARD/ :
   {
@@ -203,5 +202,3 @@ SECTIONS
 
   .ARM.attributes 0 : { *(.ARM.attributes) }
 }
-
-
