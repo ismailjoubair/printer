@@ -21,9 +21,12 @@
  */
 
 /**
- * SAMD51 HAL developed by Giuliano Zaro (AKA GMagician)
+ * persistent_store_flash.cpp
+ * HAL for stm32duino and compatible (STM32F1)
+ * Implementation of EEPROM settings in SDCard
  */
-#ifdef __SAMD51__
+
+#ifdef __STM32F1__
 
 #include "../../inc/MarlinConfig.h"
 
@@ -31,70 +34,79 @@
 
 #include "../shared/eeprom_api.h"
 
-#define NVMCTRL_CMD(c)    do{                                                 \
-                            SYNC(!NVMCTRL->STATUS.bit.READY);                 \
-                            NVMCTRL->INTFLAG.bit.DONE = true;                 \
-                            NVMCTRL->CTRLB.reg = c | NVMCTRL_CTRLB_CMDEX_KEY; \
-                            SYNC(NVMCTRL->INTFLAG.bit.DONE);                  \
-                          }while(0)
-#define NVMCTRL_FLUSH()   do{                                           \
-                            if (NVMCTRL->SEESTAT.bit.LOAD)              \
-                              NVMCTRL_CMD(NVMCTRL_CTRLB_CMD_SEEFLUSH);  \
-                          }while(0)
+#include <flash_stm32.h>
+#include <EEPROM.h>
 
-size_t PersistentStore::capacity() {
-  const uint8_t psz = NVMCTRL->SEESTAT.bit.PSZ,
-                sblk = NVMCTRL->SEESTAT.bit.SBLK;
+// Store settings in the last two pages
+#ifndef MARLIN_EEPROM_SIZE
+  #define MARLIN_EEPROM_SIZE ((EEPROM_PAGE_SIZE) * 2)
+#endif
+size_t PersistentStore::capacity() { return MARLIN_EEPROM_SIZE; }
 
-  return   (!psz && !sblk)         ? 0
-         : (psz <= 2)              ? (0x200 << psz)
-         : (sblk == 1 || psz == 3) ?  4096
-         : (sblk == 2 || psz == 4) ?  8192
-         : (sblk <= 4 || psz == 5) ? 16384
-         : (sblk >= 9 && psz == 7) ? 65536
-                                   : 32768;
-}
+static uint8_t ram_eeprom[MARLIN_EEPROM_SIZE] __attribute__((aligned(4))) = {0};
+static bool eeprom_dirty = false;
 
 bool PersistentStore::access_start() {
-  NVMCTRL->SEECFG.reg = NVMCTRL_SEECFG_WMODE_BUFFERED;  // Buffered mode and segment reallocation active
-  if (NVMCTRL->SEESTAT.bit.RLOCK)
-    NVMCTRL_CMD(NVMCTRL_CTRLB_CMD_USEE);    // Unlock E2P data write access
+  const uint32_t *source = reinterpret_cast<const uint32_t*>(EEPROM_PAGE0_BASE);
+  uint32_t *destination = reinterpret_cast<uint32_t*>(ram_eeprom);
+
+  static_assert(0 == (MARLIN_EEPROM_SIZE) % 4, "MARLIN_EEPROM_SIZE is corrupted. (Must be a multiple of 4.)"); // Ensure copying as uint32_t is safe
+  constexpr size_t eeprom_size_u32 = (MARLIN_EEPROM_SIZE) / 4;
+
+  for (size_t i = 0; i < eeprom_size_u32; ++i, ++destination, ++source)
+    *destination = *source;
+
+  eeprom_dirty = false;
   return true;
 }
 
 bool PersistentStore::access_finish() {
-  NVMCTRL_FLUSH();
-  if (!NVMCTRL->SEESTAT.bit.LOCK)
-    NVMCTRL_CMD(NVMCTRL_CTRLB_CMD_LSEE);    // Lock E2P data write access
+
+  if (eeprom_dirty) {
+    FLASH_Status status;
+
+    // Instead of erasing all (both) pages, maybe in the loop we check what page we are in, and if the
+    // data has changed in that page. We then erase the first time we "detect" a change. In theory, if
+    // nothing changed in a page, we wouldn't need to erase/write it.
+    // Or, instead of checking at this point, turn eeprom_dirty into an array of bool the size of number
+    // of pages. Inside write_data, we set the flag to true at that time if something in that
+    // page changes...either way, something to look at later.
+    FLASH_Unlock();
+
+    #define ACCESS_FINISHED(TF) { FLASH_Lock(); eeprom_dirty = false; return TF; }
+
+    status = FLASH_ErasePage(EEPROM_PAGE0_BASE);
+    if (status != FLASH_COMPLETE) ACCESS_FINISHED(true);
+    status = FLASH_ErasePage(EEPROM_PAGE1_BASE);
+    if (status != FLASH_COMPLETE) ACCESS_FINISHED(true);
+
+    const uint16_t *source = reinterpret_cast<const uint16_t*>(ram_eeprom);
+    for (size_t i = 0; i < MARLIN_EEPROM_SIZE; i += 2, ++source) {
+      if (FLASH_ProgramHalfWord(EEPROM_PAGE0_BASE + i, *source) != FLASH_COMPLETE)
+        ACCESS_FINISHED(false);
+    }
+
+    ACCESS_FINISHED(true);
+  }
+
   return true;
 }
 
 bool PersistentStore::write_data(int &pos, const uint8_t *value, size_t size, uint16_t *crc) {
-  while (size--) {
-    const uint8_t v = *value;
-    SYNC(NVMCTRL->SEESTAT.bit.BUSY);
-    if (NVMCTRL->INTFLAG.bit.SEESFULL)
-      NVMCTRL_FLUSH();      // Next write will trigger a sector reallocation. I need to flush 'pagebuffer'
-    ((volatile uint8_t *)SEEPROM_ADDR)[pos] = v;
-    SYNC(!NVMCTRL->INTFLAG.bit.SEEWRC);
-    crc16(crc, &v, 1);
-    pos++;
-    value++;
-  }
-  return false;
+  for (size_t i = 0; i < size; ++i) ram_eeprom[pos + i] = value[i];
+  eeprom_dirty = true;
+  crc16(crc, value, size);
+  pos += size;
+  return false;  // return true for any error
 }
 
-bool PersistentStore::read_data(int &pos, uint8_t *value, size_t size, uint16_t *crc, const bool writing/*=true*/) {
-  while (size--) {
-    SYNC(NVMCTRL->SEESTAT.bit.BUSY);
-    uint8_t c = ((volatile uint8_t *)SEEPROM_ADDR)[pos];
-    if (writing) *value = c;
-    crc16(crc, &c, 1);
-    pos++;
-    value++;
-  }
-  return false;
+bool PersistentStore::read_data(int &pos, uint8_t *value, const size_t size, uint16_t *crc, const bool writing/*=true*/) {
+  const uint8_t * const buff = writing ? &value[0] : &ram_eeprom[pos];
+  if (writing) for (size_t i = 0; i < size; i++) value[i] = ram_eeprom[pos + i];
+  crc16(crc, buff, size);
+  pos += size;
+  return false;  // return true for any error
 }
 
 #endif // FLASH_EEPROM_EMULATION
-#endif // __SAMD51__
+#endif // __STM32F1__

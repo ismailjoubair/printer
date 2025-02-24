@@ -19,203 +19,207 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  *
  */
-
-/**
- * SAMD51 HAL developed by Giuliano Zaro (AKA GMagician)
- */
-
-/**
- * This comes from Arduino library which at the moment is buggy and uncompilable
- */
-
-#ifdef __SAMD51__
+#ifdef __STM32F1__
 
 #include "../../inc/MarlinConfig.h"
 
 #if HAS_SERVOS
 
-#include "../shared/servo.h"
-#include "../shared/servo_private.h"
-#include "SAMD51.h"
+uint8_t ServoCount = 0;
 
-#define __TC_GCLK_ID(t)         TC##t##_GCLK_ID
-#define _TC_GCLK_ID(t)          __TC_GCLK_ID(t)
-#define TC_GCLK_ID              _TC_GCLK_ID(SERVO_TC)
+#include "Servo.h"
 
-#define _TC_PRESCALER(d)        TC_CTRLA_PRESCALER_DIV##d##_Val
-#define TC_PRESCALER(d)         _TC_PRESCALER(d)
+//#include "Servo.h"
 
-#define __SERVO_IRQn(t)         TC##t##_IRQn
-#define _SERVO_IRQn(t)          __SERVO_IRQn(t)
-#define SERVO_IRQn              _SERVO_IRQn(SERVO_TC)
+#include <boards.h>
+#include <io.h>
+#include <pwm.h>
+#include <wirish_math.h>
 
-#define HAL_SERVO_TIMER_ISR()   TC_HANDLER(SERVO_TC)
+/**
+ * 20 millisecond period config. For a 1-based prescaler,
+ *
+ *    (prescaler * overflow / CYC_MSEC) msec = 1 timer cycle = 20 msec
+ * => prescaler * overflow = 20 * CYC_MSEC
+ *
+ * This uses the smallest prescaler that allows an overflow < 2^16.
+ */
+#define MAX_OVERFLOW    UINT16_MAX // _BV(16) - 1
+#define CYC_MSEC        (1000 * CYCLES_PER_MICROSECOND)
+#define TAU_MSEC        20
+#define TAU_USEC        (TAU_MSEC * 1000)
+#define TAU_CYC         (TAU_MSEC * CYC_MSEC)
+#define SERVO_PRESCALER (TAU_CYC / MAX_OVERFLOW + 1)
+#define SERVO_OVERFLOW  ((uint16_t)round((double)TAU_CYC / SERVO_PRESCALER))
 
-#define TIMER_TCCHANNEL(t)      ((t) & 1)
-#define TC_COUNTER_START_VAL    0xFFFF
+// Unit conversions
+#define US_TO_COMPARE(us) uint16_t(map((us), 0, TAU_USEC, 0, SERVO_OVERFLOW))
+#define COMPARE_TO_US(c)  uint32_t(map((c),  0, SERVO_OVERFLOW, 0, TAU_USEC))
+#define ANGLE_TO_US(a)    uint16_t(map((a),  minAngle, maxAngle, SERVO_DEFAULT_MIN_PW, SERVO_DEFAULT_MAX_PW))
+#define US_TO_ANGLE(us)    int16_t(map((us), SERVO_DEFAULT_MIN_PW, SERVO_DEFAULT_MAX_PW, minAngle, maxAngle))
 
-static volatile int8_t currentServoIndex[_Nbr_16timers];    // index for the servo being pulsed for each timer (or -1 if refresh interval)
+void libServo::servoWrite(uint8_t inPin, uint16_t duty_cycle) {
+  #ifdef MF_TIMER_SERVO0
+    if (servoIndex == 0) {
+      pwmSetDuty(duty_cycle);
+      return;
+    }
+  #endif
 
-FORCE_INLINE static uint16_t getTimerCount() {
-  Tc * const tc = timer_config[SERVO_TC].pTc;
-
-  tc->COUNT16.CTRLBSET.reg = TC_CTRLBCLR_CMD_READSYNC;
-  SYNC(tc->COUNT16.SYNCBUSY.bit.CTRLB || tc->COUNT16.SYNCBUSY.bit.COUNT);
-
-  return tc->COUNT16.COUNT.reg;
+  timer_dev *tdev = PIN_MAP[inPin].timer_device;
+  uint8_t tchan = PIN_MAP[inPin].timer_channel;
+  if (tdev) timer_set_compare(tdev, tchan, duty_cycle);
 }
 
-// ----------------------------
-// Interrupt handler for the TC
-// ----------------------------
-HAL_SERVO_TIMER_ISR() {
-  Tc * const tc = timer_config[SERVO_TC].pTc;
-  const timer16_Sequence_t timer =
-    #ifndef _useTimer1
-      _timer2
-    #elif !defined(_useTimer2)
-      _timer1
+libServo::libServo() {
+  servoIndex = ServoCount < MAX_SERVOS ? ServoCount++ : INVALID_SERVO;
+  HAL_timer_set_interrupt_priority(MF_TIMER_SERVO0, SERVO0_TIMER_IRQ_PRIO);
+}
+
+bool libServo::attach(const int32_t inPin, const int32_t inMinAngle, const int32_t inMaxAngle) {
+  if (servoIndex >= MAX_SERVOS) return false;
+  if (inPin >= BOARD_NR_GPIO_PINS) return false;
+
+  minAngle = inMinAngle;
+  maxAngle = inMaxAngle;
+  angle = -1;
+
+  #ifdef MF_TIMER_SERVO0
+    if (servoIndex == 0 && setupSoftPWM(inPin)) {
+      pin = inPin; // set attached()
+      return true;
+    }
+  #endif
+
+  if (!PWM_PIN(inPin)) return false;
+
+  timer_dev *tdev = PIN_MAP[inPin].timer_device;
+  //uint8_t tchan = PIN_MAP[inPin].timer_channel;
+
+  SET_PWM(inPin);
+  servoWrite(inPin, 0);
+
+  timer_pause(tdev);
+  timer_set_prescaler(tdev, SERVO_PRESCALER - 1); // prescaler is 1-based
+  timer_set_reload(tdev, SERVO_OVERFLOW);
+  timer_generate_update(tdev);
+  timer_resume(tdev);
+
+  pin = inPin; // set attached()
+  return true;
+}
+
+bool libServo::detach() {
+  if (!attached()) return false;
+  angle = -1;
+  servoWrite(pin, 0);
+  return true;
+}
+
+int32_t libServo::read() const {
+  if (attached()) {
+    #ifdef MF_TIMER_SERVO0
+      if (servoIndex == 0) return angle;
+    #endif
+    timer_dev *tdev = PIN_MAP[pin].timer_device;
+    uint8_t tchan = PIN_MAP[pin].timer_channel;
+    return US_TO_ANGLE(COMPARE_TO_US(timer_get_compare(tdev, tchan)));
+  }
+  return 0;
+}
+
+void libServo::move(const int32_t value) {
+  constexpr uint16_t servo_delay[] = SERVO_DELAY;
+  static_assert(COUNT(servo_delay) == NUM_SERVOS, "SERVO_DELAY must be an array NUM_SERVOS long.");
+
+  if (attached()) {
+    angle = constrain(value, minAngle, maxAngle);
+    servoWrite(pin, US_TO_COMPARE(ANGLE_TO_US(angle)));
+    safe_delay(servo_delay[servoIndex]);
+    TERN_(DEACTIVATE_SERVOS_AFTER_MOVE, detach());
+  }
+}
+
+#ifdef MF_TIMER_SERVO0
+  extern "C" void Servo_IRQHandler() {
+    static timer_dev *tdev = HAL_get_timer_dev(MF_TIMER_SERVO0);
+    uint16_t SR = timer_get_status(tdev);
+    if (SR & TIMER_SR_CC1IF) { // channel 1 off
+      #ifdef SERVO0_PWM_OD
+        OUT_WRITE_OD(SERVO0_PIN, HIGH); // off
+      #else
+        OUT_WRITE(SERVO0_PIN, LOW);
+      #endif
+      timer_reset_status_bit(tdev, TIMER_SR_CC1IF_BIT);
+    }
+    if (SR & TIMER_SR_CC2IF) { // channel 2 resume
+      #ifdef SERVO0_PWM_OD
+        OUT_WRITE_OD(SERVO0_PIN, LOW); // on
+      #else
+        OUT_WRITE(SERVO0_PIN, HIGH);
+      #endif
+      timer_reset_status_bit(tdev, TIMER_SR_CC2IF_BIT);
+    }
+  }
+
+  bool libServo::setupSoftPWM(const int32_t inPin) {
+    timer_dev *tdev = HAL_get_timer_dev(MF_TIMER_SERVO0);
+    if (!tdev) return false;
+    #ifdef SERVO0_PWM_OD
+      OUT_WRITE_OD(inPin, HIGH);
     #else
-      (tc->COUNT16.INTFLAG.reg & tc->COUNT16.INTENSET.reg & TC_INTFLAG_MC0) ? _timer1 : _timer2
+      OUT_WRITE(inPin, LOW);
     #endif
-  ;
-  const uint8_t tcChannel = TIMER_TCCHANNEL(timer);
 
-  int8_t cho = currentServoIndex[timer];                // Handle the prior servo first
-  if (cho < 0) {                                        // Servo -1 indicates the refresh interval completed...
-    #if defined(_useTimer1) && defined(_useTimer2)
-      if (currentServoIndex[timer ^ 1] >= 0) {
-        // Wait for both channels
-        // Clear the interrupt
-        tc->COUNT16.INTFLAG.reg = (tcChannel == 0) ? TC_INTFLAG_MC0 : TC_INTFLAG_MC1;
-        return;
-      }
-    #endif
-    tc->COUNT16.COUNT.reg = TC_COUNTER_START_VAL;       // ...so reset the timer
-    SYNC(tc->COUNT16.SYNCBUSY.bit.COUNT);
-  }
-  else if (SERVO_INDEX(timer, cho) < ServoCount)        // prior channel handled?
-    digitalWrite(SERVO(timer, cho).Pin.nbr, LOW);       // pulse the prior channel LOW
+    timer_pause(tdev);
+    timer_set_mode(tdev, 1, TIMER_OUTPUT_COMPARE); // counter with isr
+    timer_oc_set_mode(tdev, 1, TIMER_OC_MODE_FROZEN, 0); // no pin output change
+    timer_oc_set_mode(tdev, 2, TIMER_OC_MODE_FROZEN, 0); // no pin output change
+    timer_set_prescaler(tdev, SERVO_PRESCALER - 1); // prescaler is 1-based
+    timer_set_reload(tdev, SERVO_OVERFLOW);
+    timer_set_compare(tdev, 1, SERVO_OVERFLOW);
+    timer_set_compare(tdev, 2, SERVO_OVERFLOW);
+    timer_attach_interrupt(tdev, 1, Servo_IRQHandler);
+    timer_attach_interrupt(tdev, 2, Servo_IRQHandler);
+    timer_generate_update(tdev);
+    timer_resume(tdev);
 
-  currentServoIndex[timer] = ++cho;                     // go to the next channel (or 0)
-  if (cho < SERVOS_PER_TIMER && SERVO_INDEX(timer, cho) < ServoCount) {
-    if (SERVO(timer, cho).Pin.isActive)                 // activated?
-      digitalWrite(SERVO(timer, cho).Pin.nbr, HIGH);    // yes: pulse HIGH
-
-    tc->COUNT16.CC[tcChannel].reg = getTimerCount() - (uint16_t)SERVO(timer, cho).ticks;
-  }
-  else {
-    // finished all channels so wait for the refresh period to expire before starting over
-    currentServoIndex[timer] = -1;                                          // reset the timer COUNT.reg on the next call
-    const uint16_t cval = getTimerCount() - 256 / (SERVO_TIMER_PRESCALER),  // allow 256 cycles to ensure the next CV not missed
-                   ival = (TC_COUNTER_START_VAL) - (uint16_t)usToTicks(REFRESH_INTERVAL); // at least REFRESH_INTERVAL has elapsed
-    tc->COUNT16.CC[tcChannel].reg = min(cval, ival);
-  }
-  if (tcChannel == 0) {
-    SYNC(tc->COUNT16.SYNCBUSY.bit.CC0);
-    tc->COUNT16.INTFLAG.reg = TC_INTFLAG_MC0; // Clear the interrupt
-  }
-  else {
-    SYNC(tc->COUNT16.SYNCBUSY.bit.CC1);
-    tc->COUNT16.INTFLAG.reg = TC_INTFLAG_MC1; // Clear the interrupt
-  }
-}
-
-void initISR(const timer16_Sequence_t timer) {
-  Tc * const tc = timer_config[SERVO_TC].pTc;
-  const uint8_t tcChannel = TIMER_TCCHANNEL(timer);
-
-  static bool initialized = false;  // Servo TC has been initialized
-  if (!initialized) {
-    NVIC_DisableIRQ(SERVO_IRQn);
-
-    // Disable the timer
-    tc->COUNT16.CTRLA.bit.ENABLE = false;
-    SYNC(tc->COUNT16.SYNCBUSY.bit.ENABLE);
-
-    // Select GCLK0 as timer/counter input clock source
-    GCLK->PCHCTRL[TC_GCLK_ID].bit.CHEN = false;
-    SYNC(GCLK->PCHCTRL[TC_GCLK_ID].bit.CHEN);
-    GCLK->PCHCTRL[TC_GCLK_ID].reg = GCLK_PCHCTRL_GEN_GCLK0 | GCLK_PCHCTRL_CHEN;   // 120MHz startup code programmed
-    SYNC(!GCLK->PCHCTRL[TC_GCLK_ID].bit.CHEN);
-
-    // Reset the timer
-    tc->COUNT16.CTRLA.bit.SWRST = true;
-    SYNC(tc->COUNT16.SYNCBUSY.bit.SWRST);
-    SYNC(tc->COUNT16.CTRLA.bit.SWRST);
-
-    // Set timer counter mode to 16 bits
-    tc->COUNT16.CTRLA.reg = TC_CTRLA_MODE_COUNT16;
-
-    // Set timer counter mode as normal PWM
-    tc->COUNT16.WAVE.bit.WAVEGEN = TCC_WAVE_WAVEGEN_NPWM_Val;
-
-    // Set the prescaler factor
-    tc->COUNT16.CTRLA.bit.PRESCALER = TC_PRESCALER(SERVO_TIMER_PRESCALER);
-
-    // Count down
-    tc->COUNT16.CTRLBSET.reg = TC_CTRLBCLR_DIR;
-    SYNC(tc->COUNT16.SYNCBUSY.bit.CTRLB);
-
-    // Reset all servo indexes
-    memset((void *)currentServoIndex, 0xFF, sizeof(currentServoIndex));
-
-    // Configure interrupt request
-    NVIC_ClearPendingIRQ(SERVO_IRQn);
-    NVIC_SetPriority(SERVO_IRQn, 5);
-    NVIC_EnableIRQ(SERVO_IRQn);
-
-    initialized = true;
+    return true;
   }
 
-  if (!tc->COUNT16.CTRLA.bit.ENABLE) {
-    // Reset the timer counter
-    tc->COUNT16.COUNT.reg = TC_COUNTER_START_VAL;
-    SYNC(tc->COUNT16.SYNCBUSY.bit.COUNT);
-
-    // Enable the timer and start it
-    tc->COUNT16.CTRLA.bit.ENABLE = true;
-    SYNC(tc->COUNT16.SYNCBUSY.bit.ENABLE);
+  void libServo::pwmSetDuty(const uint16_t duty_cycle) {
+    timer_dev *tdev = HAL_get_timer_dev(MF_TIMER_SERVO0);
+    timer_set_compare(tdev, 1, duty_cycle);
+    timer_generate_update(tdev);
+    if (duty_cycle) {
+      timer_enable_irq(tdev, 1);
+      timer_enable_irq(tdev, 2);
+    }
+    else {
+      timer_disable_irq(tdev, 1);
+      timer_disable_irq(tdev, 2);
+      #ifdef SERVO0_PWM_OD
+        OUT_WRITE_OD(pin, HIGH); // off
+      #else
+        OUT_WRITE(pin, LOW);
+      #endif
+    }
   }
-  // First interrupt request after 1 ms
-  tc->COUNT16.CC[tcChannel].reg = getTimerCount() - (uint16_t)usToTicks(1000UL);
 
-  if (tcChannel == 0 ) {
-    SYNC(tc->COUNT16.SYNCBUSY.bit.CC0);
-
-    // Clear pending match interrupt
-    tc->COUNT16.INTFLAG.reg = TC_INTENSET_MC0;
-    // Enable the match channel interrupt request
-    tc->COUNT16.INTENSET.reg = TC_INTENSET_MC0;
+  void libServo::pauseSoftPWM() { // detach
+    timer_dev *tdev = HAL_get_timer_dev(MF_TIMER_SERVO0);
+    timer_pause(tdev);
+    pwmSetDuty(0);
   }
-  else {
-    SYNC(tc->COUNT16.SYNCBUSY.bit.CC1);
 
-    // Clear pending match interrupt
-    tc->COUNT16.INTFLAG.reg = TC_INTENSET_MC1;
-    // Enable the match channel interrupt request
-    tc->COUNT16.INTENSET.reg = TC_INTENSET_MC1;
-  }
-}
+#else
 
-void finISR(const timer16_Sequence_t timer_index) {
-  Tc * const tc = timer_config[SERVO_TC].pTc;
-  const uint8_t tcChannel = TIMER_TCCHANNEL(timer_index);
+  bool libServo::setupSoftPWM(const int32_t inPin) { return false; }
+  void libServo::pwmSetDuty(const uint16_t duty_cycle) {}
+  void libServo::pauseSoftPWM() {}
 
-  // Disable the match channel interrupt request
-  tc->COUNT16.INTENCLR.reg = (tcChannel == 0) ? TC_INTENCLR_MC0 : TC_INTENCLR_MC1;
-
-  if (true
-    #if defined(_useTimer1) && defined(_useTimer2)
-      && (tc->COUNT16.INTENCLR.reg & (TC_INTENCLR_MC0|TC_INTENCLR_MC1)) == 0
-    #endif
-  ) {
-    // Disable the timer if not used
-    tc->COUNT16.CTRLA.bit.ENABLE = false;
-    SYNC(tc->COUNT16.SYNCBUSY.bit.ENABLE);
-  }
-}
+#endif
 
 #endif // HAS_SERVOS
 
-#endif // __SAMD51__
+#endif // __STM32F1__

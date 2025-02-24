@@ -19,135 +19,111 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  *
  */
-
-/**
- * SAMD51 HAL developed by Giuliano Zaro (AKA GMagician)
- */
-
-/**
- * Hardware and software SPI implementations are included in this file.
- *
- * Control of the slave select pin(s) is handled by the calling routines and
- * SAMD51 let hardware SPI handling to remove SS from its logic.
- */
-
-#ifdef __SAMD51__
-
-// --------------------------------------------------------------------------
-// Includes
-// --------------------------------------------------------------------------
+#ifdef __MK20DX256__
 
 #include "../../inc/MarlinConfig.h"
+#include "HAL.h"
+
 #include <SPI.h>
+#include <pins_arduino.h>
+#include "spi_pins.h"
 
-// --------------------------------------------------------------------------
-// Public functions
-// --------------------------------------------------------------------------
+static SPISettings spiConfig;
 
-#if ANY(SOFTWARE_SPI, FORCE_SOFT_SPI)
+/**
+ * Standard SPI functions
+ */
 
-  // ------------------------
-  // Software SPI
-  // ------------------------
-  #error "Software SPI not supported for SAMD51. Use Hardware SPI."
-
-#else // !SOFTWARE_SPI
-
-  #ifdef ADAFRUIT_GRAND_CENTRAL_M4
-    #if SD_CONNECTION_IS(ONBOARD)
-      #define sdSPI SDCARD_SPI
-    #else
-      #define sdSPI SPI
-    #endif
+// Initialize SPI bus
+void spiBegin() {
+  #if PIN_EXISTS(SD_SS)
+    OUT_WRITE(SD_SS_PIN, HIGH);
   #endif
+  SET_OUTPUT(SD_SCK_PIN);
+  SET_INPUT(SD_MISO_PIN);
+  SET_OUTPUT(SD_MOSI_PIN);
 
-  static SPISettings spiConfig;
+  #if 0 && DISABLED(SOFTWARE_SPI)
+    // set SS high - may be chip select for another SPI device
+    #if SET_SPI_SS_HIGH
+      WRITE(SD_SS_PIN, HIGH);
+    #endif
+    // set a default rate
+    spiInit(SPI_HALF_SPEED); // 1
+  #endif
+}
 
-  // ------------------------
-  // Hardware SPI
-  // ------------------------
-  void spiBegin() {
-    spiInit(SPI_HALF_SPEED);
+// Configure SPI for specified SPI speed
+void spiInit(uint8_t spiRate) {
+  // Use data rates Marlin uses
+  uint32_t clock;
+  switch (spiRate) {
+    case SPI_FULL_SPEED:    clock = 10000000; break;
+    case SPI_HALF_SPEED:    clock =  5000000; break;
+    case SPI_QUARTER_SPEED: clock =  2500000; break;
+    case SPI_EIGHTH_SPEED:  clock =  1250000; break;
+    case SPI_SPEED_5:       clock =   625000; break;
+    case SPI_SPEED_6:       clock =   312500; break;
+    default:                clock = 4000000; // Default from the SPI library
   }
+  spiConfig = SPISettings(clock, MSBFIRST, SPI_MODE0);
+  SPI.begin();
+}
 
-  void spiInit(uint8_t spiRate) {
-    // Use datarates Marlin uses
-    uint32_t clock;
-    switch (spiRate) {
-      case SPI_FULL_SPEED:      clock = 8000000; break;
-      case SPI_HALF_SPEED:      clock = 4000000; break;
-      case SPI_QUARTER_SPEED:   clock = 2000000; break;
-      case SPI_EIGHTH_SPEED:    clock = 1000000; break;
-      case SPI_SIXTEENTH_SPEED: clock =  500000; break;
-      case SPI_SPEED_5:         clock =  250000; break;
-      case SPI_SPEED_6:         clock =  125000; break;
-      default:                  clock = 4000000; break; // Default from the SPI library
-    }
-    spiConfig = SPISettings(clock, MSBFIRST, SPI_MODE0);
-    sdSPI.begin();
+// SPI receive a byte
+uint8_t spiRec() {
+  SPI.beginTransaction(spiConfig);
+  const uint8_t returnByte = SPI.transfer(0xFF);
+  SPI.endTransaction();
+  return returnByte;
+  //SPDR = 0xFF;
+  //while (!TEST(SPSR, SPIF)) { /* Intentionally left empty */ }
+  //return SPDR;
+}
+
+// SPI read data
+void spiRead(uint8_t *buf, uint16_t nbyte) {
+  SPI.beginTransaction(spiConfig);
+  SPI.transfer(buf, nbyte);
+  SPI.endTransaction();
+  //if (nbyte-- == 0) return;
+  //  SPDR = 0xFF;
+  //for (uint16_t i = 0; i < nbyte; i++) {
+  //  while (!TEST(SPSR, SPIF)) { /* Intentionally left empty */ }
+  //  buf[i] = SPDR;
+  //  SPDR = 0xFF;
+  //}
+  //while (!TEST(SPSR, SPIF)) { /* Intentionally left empty */ }
+  //buf[nbyte] = SPDR;
+}
+
+// SPI send a byte
+void spiSend(uint8_t b) {
+  SPI.beginTransaction(spiConfig);
+  SPI.transfer(b);
+  SPI.endTransaction();
+  //SPDR = b;
+  //while (!TEST(SPSR, SPIF)) { /* nada */ }
+}
+
+// SPI send block
+void spiSendBlock(uint8_t token, const uint8_t *buf) {
+  SPI.beginTransaction(spiConfig);
+  SPDR = token;
+  for (uint16_t i = 0; i < 512; i += 2) {
+    while (!TEST(SPSR, SPIF)) { /* nada */ };
+    SPDR = buf[i];
+    while (!TEST(SPSR, SPIF)) { /* nada */ };
+    SPDR = buf[i + 1];
   }
+  while (!TEST(SPSR, SPIF)) { /* nada */ };
+  SPI.endTransaction();
+}
 
-  /**
-   * @brief  Receives a single byte from the SPI port.
-   *
-   * @return Byte received
-   *
-   * @details
-   */
-  uint8_t spiRec() {
-    sdSPI.beginTransaction(spiConfig);
-    uint8_t returnByte = sdSPI.transfer(0xFF);
-    sdSPI.endTransaction();
-    return returnByte;
-  }
+// Begin SPI transaction, set clock, bit order, data mode
+void spiBeginTransaction(uint32_t spiClock, uint8_t bitOrder, uint8_t dataMode) {
+  spiConfig = SPISettings(spiClock, bitOrder, dataMode);
+  SPI.beginTransaction(spiConfig);
+}
 
-  /**
-   * @brief  Receives a number of bytes from the SPI port to a buffer
-   *
-   * @param  buf   Pointer to starting address of buffer to write to.
-   * @param  nbyte Number of bytes to receive.
-   * @return Nothing
-   */
-  void spiRead(uint8_t *buf, uint16_t nbyte) {
-    if (nbyte == 0) return;
-    memset(buf, 0xFF, nbyte);
-    sdSPI.beginTransaction(spiConfig);
-    sdSPI.transfer(buf, nbyte);
-    sdSPI.endTransaction();
-  }
-
-  /**
-   * @brief  Sends a single byte on SPI port
-   *
-   * @param  b Byte to send
-   *
-   * @details
-   */
-  void spiSend(uint8_t b) {
-    sdSPI.beginTransaction(spiConfig);
-    sdSPI.transfer(b);
-    sdSPI.endTransaction();
-  }
-
-  /**
-   * @brief  Write token and then write from 512 byte buffer to SPI (for SD card)
-   *
-   * @param  buf   Pointer with buffer start address
-   * @return Nothing
-   *
-   * @details Uses DMA
-   */
-  void spiSendBlock(uint8_t token, const uint8_t *buf) {
-    sdSPI.beginTransaction(spiConfig);
-    sdSPI.transfer(token);
-    sdSPI.transfer((uint8_t*)buf, nullptr, 512);
-    sdSPI.endTransaction();
-  }
-
-  void spiBeginTransaction(uint32_t spiClock, uint8_t bitOrder, uint8_t dataMode) {
-    spiConfig = SPISettings(spiClock, (BitOrder)bitOrder, dataMode);
-    sdSPI.beginTransaction(spiConfig);
-  }
-#endif // !SOFTWARE_SPI
-
-#endif // __SAMD51__
+#endif // __MK20DX256__

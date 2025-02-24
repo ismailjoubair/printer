@@ -19,39 +19,36 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  *
  */
-#pragma once
 
 /**
- * HAL for stm32duino.com based on Libmaple and compatible (STM32F1)
+ * Platform-independent Arduino functions for I2C EEPROM.
+ * Enable USE_SHARED_EEPROM if not supplied by the framework.
  */
 
-/**
- * STM32F1 Default SPI Pins
- *
- *         SS     SCK     MISO    MOSI
- *       +-----------------------------+
- *  SPI1 | PA4    PA5     PA6     PA7  |
- *  SPI2 | PB12   PB13    PB14    PB15 |
- *  SPI3 | PA15   PB3     PB4     PB5  |
- *       +-----------------------------+
- * Any pin can be used for Chip Select (SD_SS_PIN)
- * SPI1 is enabled by default
- */
-#ifndef SD_SCK_PIN
-  #define SD_SCK_PIN  PA5
-#endif
-#ifndef SD_MISO_PIN
-  #define SD_MISO_PIN PA6
-#endif
-#ifndef SD_MOSI_PIN
-  #define SD_MOSI_PIN PA7
-#endif
-#ifndef SD_SS_PIN
-  #define SD_SS_PIN   PA4
-#endif
-#undef SDSS
-#define SDSS    SD_SS_PIN
+#ifdef __STM32F1__
 
-#ifndef SPI_DEVICE
-  #define SPI_DEVICE 1
-#endif
+#include "../../inc/MarlinConfig.h"
+
+#if ENABLED(IIC_BL24CXX_EEPROM)
+
+#include "../../libs/BL24CXX.h"
+#include "../shared/eeprom_if.h"
+
+void eeprom_init() { BL24CXX::init(); }
+
+// ------------------------
+// Public functions
+// ------------------------
+
+void eeprom_write_byte(uint8_t *pos, uint8_t value) {
+  const unsigned eeprom_address = (unsigned)pos;
+  return BL24CXX::writeOneByte(eeprom_address, value);
+}
+
+uint8_t eeprom_read_byte(uint8_t *pos) {
+  const unsigned eeprom_address = (unsigned)pos;
+  return BL24CXX::readOneByte(eeprom_address);
+}
+
+#endif // IIC_BL24CXX_EEPROM
+#endif // __STM32F1__

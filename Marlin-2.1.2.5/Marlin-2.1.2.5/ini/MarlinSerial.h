@@ -22,38 +22,37 @@
 #pragma once
 
 #include <HardwareSerial.h>
+#include <libmaple/usart.h>
 #include <WString.h>
 
 #include "../../inc/MarlinConfigPre.h"
-#if ENABLED(EMERGENCY_PARSER)
-  #include "../../feature/e_parser.h"
-#endif
 #include "../../core/serial_hook.h"
 
-class MarlinSerial : public HardwareSerial<RX_BUFFER_SIZE, TX_BUFFER_SIZE> {
-public:
-  MarlinSerial(LPC_UART_TypeDef *UARTx) : HardwareSerial<RX_BUFFER_SIZE, TX_BUFFER_SIZE>(UARTx) { }
+// Increase priority of serial interrupts, to reduce overflow errors
+#define UART_IRQ_PRIO 1
 
-  void end() {}
+struct MarlinSerial : public HardwareSerial {
+  MarlinSerial(struct usart_dev *usart_device, uint8 tx_pin, uint8 rx_pin) : HardwareSerial(usart_device, tx_pin, rx_pin) { }
 
-  uint8_t availableForWrite(void) { /* flushTX(); */ return TX_BUFFER_SIZE; }
+  #ifdef UART_IRQ_PRIO
+    // Shadow the parent methods to set IRQ priority after begin()
+    void begin(uint32 baud) {
+      MarlinSerial::begin(baud, SERIAL_8N1);
+    }
 
-  #if ENABLED(EMERGENCY_PARSER)
-    bool recv_callback(const char c) override;
+    void begin(uint32 baud, uint8_t config) {
+      HardwareSerial::begin(baud, config);
+      nvic_irq_set_priority(c_dev()->irq_num, UART_IRQ_PRIO);
+    }
   #endif
 };
 
-// On LPC176x framework, HardwareSerial does not implement the same interface as Arduino's Serial, so overloads
-// of 'available' and 'read' method are not used in this multiple inheritance scenario.
-// Instead, use a ForwardSerial here that adapts the interface.
-typedef ForwardSerial1Class<MarlinSerial> MSerialT;
-extern MSerialT MSerial0;
+typedef Serial1Class<MarlinSerial> MSerialT;
+
 extern MSerialT MSerial1;
 extern MSerialT MSerial2;
 extern MSerialT MSerial3;
-
-// Consequently, we can't use a RuntimeSerial either. The workaround would be to use
-// a RuntimeSerial<ForwardSerial<MarlinSerial>> type here. Ignore for now until it's actually required.
-#if ENABLED(SERIAL_RUNTIME_HOOK)
-  #error "SERIAL_RUNTIME_HOOK is not yet supported for LPC176x."
+#if ANY(STM32_HIGH_DENSITY, STM32_XL_DENSITY)
+  extern MSerialT MSerial4;
+  extern MSerialT MSerial5;
 #endif

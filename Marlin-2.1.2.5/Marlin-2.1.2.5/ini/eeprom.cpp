@@ -19,86 +19,58 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  *
  */
-#ifdef __PLAT_LINUX__
+
+#ifdef __MK20DX256__
+
+/**
+ * HAL PersistentStore for Teensy 3.2 (MK20DX256)
+ */
 
 #include "../../inc/MarlinConfig.h"
 
-#if ENABLED(EEPROM_SETTINGS)
+#if USE_WIRED_EEPROM
 
 #include "../shared/eeprom_api.h"
-#include <stdio.h>
+#include <avr/eeprom.h>
 
 #ifndef MARLIN_EEPROM_SIZE
-  #define MARLIN_EEPROM_SIZE 0x1000 // 4KB of Emulated EEPROM
+  #define MARLIN_EEPROM_SIZE size_t(E2END + 1)
 #endif
-
-uint8_t buffer[MARLIN_EEPROM_SIZE];
-char filename[] = "eeprom.dat";
-
 size_t PersistentStore::capacity() { return MARLIN_EEPROM_SIZE; }
 
-bool PersistentStore::access_start() {
-  const char eeprom_erase_value = 0xFF;
-  FILE * eeprom_file = fopen(filename, "rb");
-  if (!eeprom_file) return false;
-
-  fseek(eeprom_file, 0L, SEEK_END);
-  std::size_t file_size = ftell(eeprom_file);
-
-  if (file_size < MARLIN_EEPROM_SIZE) {
-    memset(buffer + file_size, eeprom_erase_value, MARLIN_EEPROM_SIZE - file_size);
-  }
-  else {
-    fseek(eeprom_file, 0L, SEEK_SET);
-    fread(buffer, sizeof(uint8_t), sizeof(buffer), eeprom_file);
-  }
-
-  fclose(eeprom_file);
-  return true;
-}
-
-bool PersistentStore::access_finish() {
-  FILE * eeprom_file = fopen(filename, "wb");
-  if (!eeprom_file) return false;
-  fwrite(buffer, sizeof(uint8_t), sizeof(buffer), eeprom_file);
-  fclose(eeprom_file);
-  return true;
-}
+bool PersistentStore::access_start()  { return true; }
+bool PersistentStore::access_finish() { return true; }
 
 bool PersistentStore::write_data(int &pos, const uint8_t *value, size_t size, uint16_t *crc) {
-  std::size_t bytes_written = 0;
-
-  for (std::size_t i = 0; i < size; i++) {
-    buffer[pos + i] = value[i];
-    bytes_written++;
+  uint16_t written = 0;
+  while (size--) {
+    uint8_t * const p = (uint8_t * const)pos;
+    uint8_t v = *value;
+    if (v != eeprom_read_byte(p)) { // EEPROM has only ~100,000 write cycles, so only write bytes that have changed!
+      eeprom_write_byte(p, v);
+      if (++written & 0x7F) delay(2); else safe_delay(2); // Avoid triggering watchdog during long EEPROM writes
+      if (eeprom_read_byte(p) != v) {
+        SERIAL_ECHO_MSG(STR_ERR_EEPROM_WRITE);
+        return true;
+      }
+    }
+    crc16(crc, &v, 1);
+    pos++;
+    value++;
   }
-
-  crc16(crc, value, size);
-  pos += size;
-  return (bytes_written != size);  // return true for any error
+  return false;
 }
 
-bool PersistentStore::read_data(int &pos, uint8_t *value, const size_t size, uint16_t *crc, const bool writing/*=true*/) {
-  std::size_t bytes_read = 0;
-  if (writing) {
-    for (std::size_t i = 0; i < size; i++) {
-      value[i] = buffer[pos + i];
-      bytes_read++;
-    }
-    crc16(crc, value, size);
-  }
-  else {
-    uint8_t temp[size];
-    for (std::size_t i = 0; i < size; i++) {
-      temp[i] = buffer[pos + i];
-      bytes_read++;
-    }
-    crc16(crc, temp, size);
-  }
-
-  pos += size;
-  return bytes_read != size;  // return true for any error
+bool PersistentStore::read_data(int &pos, uint8_t *value, size_t size, uint16_t *crc, const bool writing/*=true*/) {
+  do {
+    uint8_t c = eeprom_read_byte((uint8_t*)pos);
+    if (writing) *value = c;
+    crc16(crc, &c, 1);
+    pos++;
+    value++;
+  } while (--size);
+  return false;
 }
 
-#endif // EEPROM_SETTINGS
-#endif // __PLAT_LINUX__
+#endif // USE_WIRED_EEPROM
+#endif // __MK20DX256__

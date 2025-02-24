@@ -21,37 +21,40 @@
  */
 #pragma once
 
-/**
- * HAL for stm32duino.com based on Libmaple and compatible (STM32F1)
- */
+#include <stdint.h>
 
-/**
- * STM32F1 Default SPI Pins
- *
- *         SS     SCK     MISO    MOSI
- *       +-----------------------------+
- *  SPI1 | PA4    PA5     PA6     PA7  |
- *  SPI2 | PB12   PB13    PB14    PB15 |
- *  SPI3 | PA15   PB3     PB4     PB5  |
- *       +-----------------------------+
- * Any pin can be used for Chip Select (SD_SS_PIN)
- * SPI1 is enabled by default
- */
-#ifndef SD_SCK_PIN
-  #define SD_SCK_PIN  PA5
-#endif
-#ifndef SD_MISO_PIN
-  #define SD_MISO_PIN PA6
-#endif
-#ifndef SD_MOSI_PIN
-  #define SD_MOSI_PIN PA7
-#endif
-#ifndef SD_SS_PIN
-  #define SD_SS_PIN   PA4
-#endif
-#undef SDSS
-#define SDSS    SD_SS_PIN
+typedef enum {
+  USB_STATE_INIT,
+  USB_STATE_ERROR,
+  USB_STATE_RUNNING,
+} usb_state_t;
 
-#ifndef SPI_DEVICE
-  #define SPI_DEVICE 1
-#endif
+class USBHost {
+public:
+  bool start();
+  void Task();
+  uint8_t getUsbTaskState();
+  void setUsbTaskState(uint8_t state);
+  uint8_t regRd(uint8_t reg) { return 0x0; };
+  uint8_t usb_task_state = USB_STATE_INIT;
+  uint8_t lun = 0;
+  uint32_t capacity = 0;
+  uint16_t block_size = 0;
+  uint32_t block_count = 0;
+};
+
+class BulkStorage {
+public:
+  BulkStorage(USBHost *usb) : usb(usb) {};
+
+  bool LUNIsGood(uint8_t t);
+  uint32_t GetCapacity(uint8_t lun);
+  uint16_t GetSectorSize(uint8_t lun);
+  uint8_t Read(uint8_t lun, uint32_t addr, uint16_t bsize, uint8_t blocks, uint8_t *buf);
+  uint8_t Write(uint8_t lun, uint32_t addr, uint16_t bsize, uint8_t blocks, const uint8_t * buf);
+
+  USBHost *usb;
+};
+
+extern USBHost usb;
+extern BulkStorage bulk;

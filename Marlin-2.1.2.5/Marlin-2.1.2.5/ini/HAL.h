@@ -22,7 +22,7 @@
 #pragma once
 
 /**
- * SAMD51 HAL developed by Giuliano Zaro (AKA GMagician)
+ * HAL for Teensy 3.2 (MK20DX256)
  */
 
 #define CPU_32_BIT
@@ -30,90 +30,79 @@
 #include "../shared/Marduino.h"
 #include "../shared/math_32bit.h"
 #include "../shared/HAL_SPI.h"
+
 #include "fastio.h"
 
-#ifdef ADAFRUIT_GRAND_CENTRAL_M4
-  #include "MarlinSerial_AGCM4.h"
+#include <stdint.h>
 
-  // Serial ports
-  typedef ForwardSerial1Class< decltype(Serial) > DefaultSerial1;
-  typedef ForwardSerial1Class< decltype(Serial1) > DefaultSerial2;
-  typedef ForwardSerial1Class< decltype(Serial2) > DefaultSerial3;
-  typedef ForwardSerial1Class< decltype(Serial3) > DefaultSerial4;
-  typedef ForwardSerial1Class< decltype(Serial4) > DefaultSerial5;
-  extern DefaultSerial1 MSerial0;
-  extern DefaultSerial2 MSerial1;
-  extern DefaultSerial3 MSerial2;
-  extern DefaultSerial4 MSerial3;
-  extern DefaultSerial5 MSerial4;
+// ------------------------
+// Defines
+// ------------------------
 
-  #define __MSERIAL(X) MSerial##X
-  #define _MSERIAL(X) __MSERIAL(X)
-  #define MSERIAL(X) _MSERIAL(INCREMENT(X))
+#define IS_32BIT_TEENSY 1
+#define IS_TEENSY_31_32 1
+#ifndef IS_TEENSY31
+  #define IS_TEENSY32 1
+#endif
 
-  #if SERIAL_PORT == -1
-    #define MYSERIAL1 MSerial0
-  #elif WITHIN(SERIAL_PORT, 0, 3)
-    #define MYSERIAL1 MSERIAL(SERIAL_PORT)
-  #else
-    #error "SERIAL_PORT must be from 0 to 3. You can also use -1 if the board supports Native USB."
-  #endif
+#define CPU_ST7920_DELAY_1 600
+#define CPU_ST7920_DELAY_2 750
+#define CPU_ST7920_DELAY_3 750
 
-  #ifdef SERIAL_PORT_2
-    #if SERIAL_PORT_2 == -1
-      #define MYSERIAL2 MSerial0
-    #elif WITHIN(SERIAL_PORT_2, 0, 3)
-      #define MYSERIAL2 MSERIAL(SERIAL_PORT_2)
-    #else
-      #error "SERIAL_PORT_2 must be from 0 to 3. You can also use -1 if the board supports Native USB."
-    #endif
-  #endif
+// ------------------------
+// Serial ports
+// ------------------------
 
-  #ifdef MMU2_SERIAL_PORT
-    #if MMU2_SERIAL_PORT == -1
-      #define MMU2_SERIAL MSerial0
-    #elif WITHIN(MMU2_SERIAL_PORT, 0, 3)
-      #define MMU2_SERIAL MSERIAL(MMU2_SERIAL_PORT)
-    #else
-      #error "MMU2_SERIAL_PORT must be from 0 to 3. You can also use -1 if the board supports Native USB."
-    #endif
-  #endif
+#include "../../core/serial_hook.h"
 
-  #ifdef LCD_SERIAL_PORT
-    #if LCD_SERIAL_PORT == -1
-      #define LCD_SERIAL MSerial0
-    #elif WITHIN(LCD_SERIAL_PORT, 0, 3)
-      #define LCD_SERIAL MSERIAL(LCD_SERIAL_PORT)
-    #else
-      #error "LCD_SERIAL_PORT must be from 0 to 3. You can also use -1 if the board supports Native USB."
-    #endif
-  #endif
+#define Serial0 Serial
+#define _DECLARE_SERIAL(X) \
+  typedef ForwardSerial1Class<decltype(Serial##X)> DefaultSerial##X; \
+  extern DefaultSerial##X MSerial##X
+#define DECLARE_SERIAL(X) _DECLARE_SERIAL(X)
 
-#endif // ADAFRUIT_GRAND_CENTRAL_M4
+typedef ForwardSerial1Class<decltype(SerialUSB)> USBSerialType;
+extern USBSerialType USBSerial;
+
+#define _MSERIAL(X) MSerial##X
+#define MSERIAL(X) _MSERIAL(X)
+
+#if SERIAL_PORT == -1
+  #define MYSERIAL1 USBSerial
+#elif WITHIN(SERIAL_PORT, 0, 3)
+  DECLARE_SERIAL(SERIAL_PORT);
+  #define MYSERIAL1 MSERIAL(SERIAL_PORT)
+#else
+  #error "The required SERIAL_PORT must be from 0 to 3, or -1 for Native USB."
+#endif
+
+// ------------------------
+// Types
+// ------------------------
+
+class libServo;
+typedef libServo hal_servo_t;
 
 typedef int8_t pin_t;
 
-#define SHARED_SERVOS HAS_SERVOS  // Use shared/servos.cpp
-
-class Servo;
-typedef Servo hal_servo_t;
-
-//
+// ------------------------
 // Interrupts
-//
+// ------------------------
+
+uint32_t __get_PRIMASK(void); // CMSIS
 #define CRITICAL_SECTION_START()  const bool irqon = !__get_PRIMASK(); __disable_irq()
 #define CRITICAL_SECTION_END()    if (irqon) __enable_irq()
 
-#define cli() __disable_irq() // Disable interrupts
-#define sei() __enable_irq()  // Enable interrupts
-
-//
+// ------------------------
 // ADC
-//
+// ------------------------
 
-//#define HAL_ADC_FILTERED          // Disable Marlin's oversampling. The HAL filters ADC values.
+#ifndef analogInputToDigitalPin
+  #define analogInputToDigitalPin(p) pin_t((p < 12U) ? (p) + 54U : -1)
+#endif
+
 #define HAL_ADC_VREF_MV   3300
-#define HAL_ADC_RESOLUTION  10      // ... 12
+#define HAL_ADC_RESOLUTION  10
 
 //
 // Pin Mapping for M42, M43, M226
@@ -121,12 +110,6 @@ typedef Servo hal_servo_t;
 #define GET_PIN_MAP_PIN(index) index
 #define GET_PIN_MAP_INDEX(pin) pin
 #define PARSED_PIN_INDEX(code, dval) parser.intval(code, dval)
-
-//
-// Tone
-//
-void tone(const pin_t _pin, const unsigned int frequency, const unsigned long duration=0);
-void noTone(const pin_t _pin);
 
 // ------------------------
 // Class Utilities
@@ -137,17 +120,7 @@ void noTone(const pin_t _pin);
   #pragma GCC diagnostic ignored "-Wunused-function"
 #endif
 
-#ifdef __cplusplus
-  extern "C" {
-#endif
-
-char *dtostrf(double __val, signed char __width, unsigned char __prec, char *__s);
-
 extern "C" int freeMemory();
-
-#ifdef __cplusplus
-  }
-#endif
 
 #pragma GCC diagnostic pop
 
@@ -165,14 +138,14 @@ public:
   static void watchdog_init()    IF_DISABLED(USE_WATCHDOG, {});
   static void watchdog_refresh() IF_DISABLED(USE_WATCHDOG, {});
 
-  static void init();          // Called early in setup()
+  static void init() {}        // Called early in setup()
   static void init_board() {}  // Called less early in setup()
   static void reboot();        // Restart the firmware from 0x0
 
   // Interrupts
   static bool isr_state() { return !__get_PRIMASK(); }
-  static void isr_on()  { sei(); }
-  static void isr_off() { cli(); }
+  static void isr_on()  { __enable_irq(); }
+  static void isr_off() { __disable_irq(); }
 
   static void delay_ms(const int ms) { delay(ms); }
 
@@ -190,22 +163,20 @@ public:
   // ADC Methods
   //
 
-  static uint16_t adc_result;
-
   // Called by Temperature::init once at startup
   static void adc_init();
 
   // Called by Temperature::init for each sensor at startup
-  static void adc_enable(const uint8_t ch) {}
+  static void adc_enable(const pin_t ch) {}
 
-  // Begin ADC sampling on the given pin. Called from Temperature::isr!
-  static void adc_start(const pin_t pin);
+  // Begin ADC sampling on the given channel. Called from Temperature::isr!
+  static void adc_start(const pin_t ch);
 
   // Is the ADC ready for reading?
   static bool adc_ready() { return true; }
 
   // The current value of the ADC register
-  static uint16_t adc_value() { return adc_result; }
+  static uint16_t adc_value();
 
   /**
    * Set the PWM duty cycle for the pin to the given value.
@@ -216,6 +187,4 @@ public:
     analogWrite(pin, v);
   }
 
-private:
-  static void dma_init();
 };

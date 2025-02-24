@@ -20,7 +20,7 @@
  *
  */
 
-#ifdef TARGET_LPC1768
+#ifdef __STM32F1__
 
 #include "../../../inc/MarlinConfig.h"
 
@@ -37,20 +37,32 @@ uint16_t delta(uint16_t a, uint16_t b) { return a > b ? a - b : b - a; }
   SPIClass XPT2046::SPIx(TOUCH_BUTTONS_HW_SPI_DEVICE);
 
   static void touch_spi_init(uint8_t spiRate) {
+    /**
+     * STM32F1 APB2 = 72MHz, APB1 = 36MHz, max SPI speed of this MCU if 18Mhz
+     * STM32F1 has 3 SPI ports, SPI1 in APB2, SPI2/SPI3 in APB1
+     * so the minimum prescale of SPI1 is DIV4, SPI2/SPI3 is DIV2
+     */
+    uint8_t clock;
+    switch (spiRate) {
+      case SPI_FULL_SPEED:    clock = SPI_CLOCK_DIV4;  break;
+      case SPI_HALF_SPEED:    clock = SPI_CLOCK_DIV4; break;
+      case SPI_QUARTER_SPEED: clock = SPI_CLOCK_DIV8; break;
+      case SPI_EIGHTH_SPEED:  clock = SPI_CLOCK_DIV16; break;
+      case SPI_SPEED_5:       clock = SPI_CLOCK_DIV32; break;
+      case SPI_SPEED_6:       clock = SPI_CLOCK_DIV64; break;
+      default:                clock = SPI_CLOCK_DIV2;        // Default from the SPI library
+    }
     XPT2046::SPIx.setModule(TOUCH_BUTTONS_HW_SPI_DEVICE);
-    XPT2046::SPIx.setClock(SPI_CLOCK_DIV128);
+    XPT2046::SPIx.setClockDivider(clock);
     XPT2046::SPIx.setBitOrder(MSBFIRST);
     XPT2046::SPIx.setDataMode(SPI_MODE0);
-    XPT2046::SPIx.setDataSize(DATA_SIZE_8BIT);
   }
-#endif
+#endif // TOUCH_BUTTONS_HW_SPI
 
 void XPT2046::Init() {
-  #if DISABLED(TOUCH_BUTTONS_HW_SPI)
-    SET_INPUT(TOUCH_MISO_PIN);
-    SET_OUTPUT(TOUCH_MOSI_PIN);
-    SET_OUTPUT(TOUCH_SCK_PIN);
-  #endif
+  SET_INPUT(TOUCH_MISO_PIN);
+  SET_OUTPUT(TOUCH_MOSI_PIN);
+  SET_OUTPUT(TOUCH_SCK_PIN);
   OUT_WRITE(TOUCH_CS_PIN, HIGH);
 
   #if PIN_EXISTS(TOUCH_INT)
@@ -110,11 +122,10 @@ uint16_t XPT2046::IO(uint16_t data) {
   return TERN(TOUCH_BUTTONS_HW_SPI, HardwareIO, SoftwareIO)(data);
 }
 
-extern uint8_t spiTransfer(uint8_t b);
-
 #if ENABLED(TOUCH_BUTTONS_HW_SPI)
   uint16_t XPT2046::HardwareIO(uint16_t data) {
-    return SPIx.transfer(data & 0xFF);
+    uint16_t result = SPIx.transfer(data);
+    return result;
   }
 #endif
 
@@ -133,4 +144,5 @@ uint16_t XPT2046::SoftwareIO(uint16_t data) {
 }
 
 #endif // HAS_TFT_XPT2046 || HAS_RES_TOUCH_BUTTONS
-#endif // TARGET_LPC1768
+
+#endif // __STM32F1__
