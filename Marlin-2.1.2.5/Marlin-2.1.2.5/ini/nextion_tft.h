@@ -22,32 +22,42 @@
 #pragma once
 
 /* ****************************************
- * lcd/extui/nextion/FileNavigator.cpp
+ * lcd/extui/nextion/nextion_tft.h
  * ****************************************
  * Extensible_UI implementation for Nextion
  * https://github.com/Skorpi08
  * ***************************************/
 
-#include "nextion_tft_defs.h" // for MAX_PATH_LEN
+#include "nextion_tft_defs.h"
+#include "../../../inc/MarlinConfigPre.h"
 #include "../ui_api.h"
 
-using namespace ExtUI;
-
-class FileNavigator {
-  public:
-    FileNavigator();
-    static void  reset();
-    static void  getFiles(uint16_t);
-    static void  upDIR();
-    static void  changeDIR(char *);
-    static void  refresh();
-    static char* getCurrentFolderName();
+class NextionTFT {
   private:
-    static FileList filelist;
-    static char     currentfoldername[MAX_PATH_LEN];
-    static uint16_t lastindex;
-    static uint8_t  folderdepth;
-    static uint16_t currentindex;
+    static uint8_t command_len;
+    static char    nextion_command[MAX_CMND_LEN];
+    static char    selectedfile[MAX_PATH_LEN];
+
+  public:
+    NextionTFT();
+    static void Startup();
+    static void IdleLoop();
+    static void PrinterKilled(FSTR_P const, FSTR_P const);
+    static void ConfirmationRequest(const char * const);
+    static void StatusChange(const char * const);
+    static void SendtoTFT(FSTR_P const=nullptr);
+    //static void SendtoTFTLN(FSTR_P const=nullptr);
+    static void UpdateOnChange();
+    static void PrintFinished();
+    static void PanelInfo(uint8_t);
+
+  private:
+    static bool ReadTFTCommand();
+    static void SendFileList(int8_t);
+    static void SelectFile();
+    static void ProcessPanelRequest();
+    static void PanelAction(uint8_t);
+    static void _format_time(char *, uint32_t);
 };
 
-extern FileNavigator filenavigator;
+extern NextionTFT nextion;
